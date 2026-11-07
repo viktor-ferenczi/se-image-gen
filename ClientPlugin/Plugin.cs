@@ -1,10 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Threading;
-using ClientPlugin.Settings;
-using ClientPlugin.Settings.Layouts;
 using HarmonyLib;
-using Sandbox.Graphics.GUI;
 using Shared.Config;
 using Shared.Logging;
 using Shared.Patches;
@@ -28,7 +25,6 @@ public class Plugin : IPlugin, ICommonPlugin
 {
     public const string Name = "LcdImageGen";
     public static Plugin Instance { get; private set; }
-    private SettingsGenerator settingsGenerator;
     public long Tick { get; private set; }
     private static bool failed;
 
@@ -50,7 +46,6 @@ public class Plugin : IPlugin, ICommonPlugin
 #endif
 
         Instance = this;
-        Instance.settingsGenerator = new SettingsGenerator();
 
         Log.Info("Loading");
 
@@ -114,17 +109,4 @@ public class Plugin : IPlugin, ICommonPlugin
         // TODO: Put your update code here. It is called on every simulation frame!
         PatchHelpers.PatchUpdates();
     }
-
-    // ReSharper disable once UnusedMember.Global
-    public void OpenConfigDialog()
-    {
-        Instance.settingsGenerator.SetLayout<Simple>();
-        MyGuiSandbox.AddScreen(Instance.settingsGenerator.Dialog);
-    }
-
-    //TODO: Uncomment and use this method to load asset files
-    /*public void LoadAssets(string folder)
-    {
-
-    }*/
 }

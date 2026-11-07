@@ -14,8 +14,8 @@ resolution it can hold.
   game's normal LCD sync.
 - **Image server**: the model runs in an `sd-server` of
   [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) on any host with a
-  16 GB GPU. The plugins call its HTTP API, so the game and the model can be on different
-  machines. An image takes about 8 s on a Radeon AI PRO R9700.
+  16 GB GPU. The plugins call its HTTP API at `ImageServerUrl` in `LcdImageGen.cfg`, for
+  example `http://192.168.1.20:1234`, so the game and the model can be on different machines. An image takes about 8 s on a Radeon AI PRO R9700.
 
 ## Writing a prompt
 

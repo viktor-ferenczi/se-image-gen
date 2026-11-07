@@ -7,7 +7,7 @@ public interface IPluginConfig : INotifyPropertyChanged
     // Enables the plugin
     bool Enabled { get; set; }
 
-    // Base URL of the stable-diffusion.cpp sd-server that runs the image model, see README.md
+    // Base URL of the stable-diffusion.cpp sd-server that runs the image model, see Docs/image-server.md
     string ImageServerUrl { get; set; }
 
     // Seconds to wait for an image, including the time queued in the image server

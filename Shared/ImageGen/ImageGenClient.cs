@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace Shared.ImageGen;
 
 // Calls the txt2img API of a stable-diffusion.cpp sd-server that runs the image model,
-// see the README. Blocking, so run it on a worker thread.
+// see Docs/image-server.md. Blocking, so run it on a worker thread.
 public static class ImageGenClient
 {
     // Returns the image as columns x rows RGB bytes, scaled down to the character grid

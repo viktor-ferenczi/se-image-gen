@@ -9,6 +9,8 @@
     <Compile Include="../Shared/ImageGen/ScreenFit.cs" Link="ScreenFit.cs" />
     <Compile Include="../Shared/ImageGen/LcdArt.cs" Link="LcdArt.cs" />
     <Compile Include="../Shared/ImageGen/PromptHistory.cs" Link="PromptHistory.cs" />
+    <Compile Include="../Shared/ImageGen/RgbImage.cs" Link="RgbImage.cs" />
+    <Compile Include="../Shared/ImageGen/ImageGenClient.cs" Link="ImageGenClient.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

@@ -28,8 +28,11 @@ public class PluginConfig : IPluginConfig
     }
 
     private bool enabled = true;
-    private string serviceUrl = "http://127.0.0.1:8183";
+    private string imageServerUrl = "http://127.0.0.1:1234";
     private int timeoutSeconds = 300;
+    private int imagePixels = 512 * 512;
+    private int steps = 8;
+    private float cfgScale = 3f;
     private int maxPendingPerPlayer = 1;
     private int maxCharacters = 100000;
     private float minCellPixels = 2.88f;
@@ -42,16 +45,34 @@ public class PluginConfig : IPluginConfig
         set => SetValue(ref enabled, value);
     }
 
-    public string ServiceUrl
+    public string ImageServerUrl
     {
-        get => serviceUrl;
-        set => SetValue(ref serviceUrl, value);
+        get => imageServerUrl;
+        set => SetValue(ref imageServerUrl, value);
     }
 
     public int TimeoutSeconds
     {
         get => timeoutSeconds;
         set => SetValue(ref timeoutSeconds, value);
+    }
+
+    public int ImagePixels
+    {
+        get => imagePixels;
+        set => SetValue(ref imagePixels, value);
+    }
+
+    public int Steps
+    {
+        get => steps;
+        set => SetValue(ref steps, value);
+    }
+
+    public float CfgScale
+    {
+        get => cfgScale;
+        set => SetValue(ref cfgScale, value);
     }
 
     public int MaxPendingPerPlayer

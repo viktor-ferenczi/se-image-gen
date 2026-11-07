@@ -7,11 +7,21 @@ public interface IPluginConfig : INotifyPropertyChanged
     // Enables the plugin
     bool Enabled { get; set; }
 
-    // Base URL of the image generation service, see service/README.md
-    string ServiceUrl { get; set; }
+    // Base URL of the stable-diffusion.cpp sd-server that runs the image model, see README.md
+    string ImageServerUrl { get; set; }
 
-    // Seconds to wait for an image, including the time queued in the service
+    // Seconds to wait for an image, including the time queued in the image server
     int TimeoutSeconds { get; set; }
+
+    // Pixels of a generated image (512 x 512 by default), at the screen's aspect ratio.
+    // The image is then scaled down to the character grid.
+    int ImagePixels { get; set; }
+
+    // Sampling steps of the image model, fewer is faster
+    int Steps { get; set; }
+
+    // Guidance scale of the image model
+    float CfgScale { get; set; }
 
     // Prompts a player may have waiting at the same time, 0 for no limit
     int MaxPendingPerPlayer { get; set; }

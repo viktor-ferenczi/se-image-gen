@@ -280,14 +280,26 @@ public static class ImageGenController
             $"Generating: block {block.EntityId} \"{block.DisplayNameText}\" screen {index}, texture {surface.TextureSize.X:0}x{surface.TextureSize.Y:0}, surface {surface.SurfaceSize.X:0.#}x{surface.SurfaceSize.Y:0.#}, {fit}; prompt: {prompt}"
         );
 
-        var url = Config.ServiceUrl;
+        var url = Config.ImageServerUrl;
         var timeout = Config.TimeoutSeconds;
+        var pixels = Config.ImagePixels;
+        var steps = Config.Steps;
+        var cfgScale = Config.CfgScale;
         var dither = Config.Dither;
         Task.Run(() =>
         {
             try
             {
-                var rgb = ImageGenClient.Generate(url, prompt, fit.Columns, fit.Rows, timeout);
+                var rgb = ImageGenClient.Generate(
+                    url,
+                    prompt,
+                    fit.Columns,
+                    fit.Rows,
+                    pixels,
+                    steps,
+                    cfgScale,
+                    timeout
+                );
                 job.Art = LcdArt.FromRgb(rgb, fit.Columns, fit.Rows, dither);
             }
             catch (ImageGenException e)

@@ -10,8 +10,9 @@ without it that joins; the client must see the images through the game's own LCD
 
 Both paste a station with a programmable block (two screens), a square LCD, a wide LCD and a
 cockpit seat (six screens). The block's script writes the prompts on the screens and reports
-what they show. The image service runs in stub mode (a test pattern after STUB_SECONDS), or
-pass --service URL to use a running one with the real model. Prints PASS/FAIL per check.
+what they show. A stub sd-server (tests/stub_sd_server.py) answers with a test pattern after
+STUB_SECONDS, or pass --sd-server URL to use a running sd-server with the real model.
+Prints PASS/FAIL per check.
 
 Ports, the client id and folders come from the workspace's test slot claimed under TASK,
 every game process starts under run-test.sh (RAM guard and test lock), and nothing of the
@@ -57,7 +58,7 @@ SERVER_PLUGIN_ID = "A8BA1F4C-E820-4809-92E6-484ED67E87D3"
 RENDER_GIB = 5.5
 SERVER_GIB = 4.0
 STUB_SECONDS = 4.0
-# Seconds to wait for all images, longer with the real model (--service)
+# Seconds to wait for all images, longer with the real model (--sd-server)
 IMAGES_TIMEOUT = 60 + 3 * STUB_SECONDS * 6
 
 
@@ -187,8 +188,11 @@ def plugin_config(service_url: str) -> str:
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <PluginConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Enabled>true</Enabled>
-  <ServiceUrl>{service_url}</ServiceUrl>
+  <ImageServerUrl>{service_url}</ImageServerUrl>
   <TimeoutSeconds>600</TimeoutSeconds>
+  <ImagePixels>262144</ImagePixels>
+  <Steps>8</Steps>
+  <CfgScale>3</CfgScale>
   <MaxPendingPerPlayer>1</MaxPendingPerPlayer>
   <MaxCharacters>100000</MaxCharacters>
   <MinCellPixels>2.88</MinCellPixels>
@@ -473,22 +477,22 @@ def ensure_character(remote: RemoteAPI, timeout: float = 300.0) -> dict:
 
 
 def start_service(stub: float) -> str:
-    _stop(SERVICE_PID, "lcd_imagegen_service", 10)
+    _stop(SERVICE_PID, "stub_sd_server", 10)
     _start(
         [
-            sys.executable, REPO / "service/lcd_imagegen_service.py", "--port", SERVICE_PORT,
-            "--stub", stub, "--keep", ARTIFACTS / "images",
+            sys.executable, REPO / "tests/stub_sd_server.py", "--port", SERVICE_PORT,
+            "--seconds", stub, "--keep", ARTIFACTS / "images",
         ],
         0, REPO, SERVICE_LOG, SERVICE_PID, guarded=False,
     )  # fmt: skip
-    wait_until(lambda: "listening" in SERVICE_LOG.read_text(errors="replace"), 30, "the service")
+    wait_until(lambda: "listening" in SERVICE_LOG.read_text(errors="replace"), 30, "the stub sd-server")
     return f"http://127.0.0.1:{SERVICE_PORT}"
 
 
 def stop_all() -> None:
     _stop(CLIENT_PID, str(LAUNCHER), 60)
     _stop(SERVER_PID, str(SERVER_CONFIG), 120)
-    _stop(SERVICE_PID, "lcd_imagegen_service", 10)
+    _stop(SERVICE_PID, "stub_sd_server", 10)
 
 
 # --- checks -------------------------------------------------------------------------
@@ -590,7 +594,7 @@ def history_entry(state: dict, block: str, index: int) -> str | None:
 
 def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     # Prompts on a single LCD and on two screens of each multi-screen block, all at once:
-    # the service runs one job at a time, so they finish one after another
+    # the image server runs one job at a time, so they finish one after another
     prompts = {
         ("LCD", 0): "a red fox in the snow",
         ("Wide LCD", 0): "a panorama of a mountain lake",
@@ -626,7 +630,7 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         )
     c.check(
         elapsed >= len(prompts) * STUB_SECONDS * 0.9,
-        "the service ran the jobs one at a time",
+        "the image server ran the jobs one at a time",
         f"{len(prompts)} images in {elapsed:.1f} s with {STUB_SECONDS:g} s each",
     )
 
@@ -876,9 +880,9 @@ def run(mode: str, service: str | None) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("mode", choices=["offline", "ds", "stop"])
-    parser.add_argument("--service", help="URL of a running image service instead of the stub")
+    parser.add_argument("--sd-server", help="URL of a running sd-server instead of the stub")
     args = parser.parse_args()
     if args.mode == "stop":
         stop_all()
     else:
-        sys.exit(run(args.mode, args.service))
+        sys.exit(run(args.mode, args.sd_server))

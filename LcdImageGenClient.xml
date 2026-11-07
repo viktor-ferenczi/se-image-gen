@@ -20,9 +20,9 @@
   <Tooltip>Write /ig &lt;prompt&gt; on an LCD to show a generated image there</Tooltip>
 
   <!-- Optional plugin description. If omitted, this will be the same as the Tooltip. 1000 characters max. -->
-  <Description>Write /ig followed by a prompt as the text of an LCD or any other screen, and a locally running image generation service draws the picture onto that screen in color characters.
+  <Description>Write /ig followed by a prompt as the text of an LCD or any other screen, and an image model draws the picture onto that screen in color characters.
         Works offline and when hosting a friends game; joined players need no plugin.
-        Needs the image service from the plugin's repository.
+        Needs the MOSS-Image model running in a stable-diffusion.cpp sd-server, see the plugin's README.
     </Description>
 
   <!-- Only source code in the Directory entries listed in SourceDirectories is compiled. Exclude any test projects or similar. -->

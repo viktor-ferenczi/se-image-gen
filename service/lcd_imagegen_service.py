@@ -91,6 +91,7 @@ def free_gpu_gib(device: str) -> float | None:
         ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits", "-i", device[5:]],
         capture_output=True,
         text=True,
+        check=False,
     )
     return int(result.stdout.strip()) / 1024 if result.returncode == 0 else None
 
@@ -124,7 +125,9 @@ class Generator:
             image = stub_image(prompt, width, height)
         else:
             image = self._run_model(prompt, width, height)
-        log.info("generated %dx%d for %dx%d in %.1f s: %s", width, height, columns, rows, time.monotonic() - started, prompt)
+        log.info(
+            "generated %dx%d for %dx%d in %.1f s: %s", width, height, columns, rows, time.monotonic() - started, prompt
+        )
         if self.args.keep:
             self.args.keep.mkdir(parents=True, exist_ok=True)
             image.save(self.args.keep / f"{time.strftime('%Y%m%d-%H%M%S')}-{columns}x{rows}.png")
@@ -137,7 +140,13 @@ class Generator:
                 HTTPStatus.SERVICE_UNAVAILABLE,
                 f"GPU {self.args.device} is busy: {free:.1f} GiB free, {self.args.min_free_gib:g} GiB needed",
             )
-        job = {"prompt": prompt, "negative": self.args.negative, "width": width, "height": height, "output": "image.png"}
+        job = {
+            "prompt": prompt,
+            "negative": self.args.negative,
+            "width": width,
+            "height": height,
+            "output": "image.png",
+        }
         with tempfile.TemporaryDirectory(prefix="lcd-imagegen-") as folder:
             command = [
                 *self.args.image_gen.split(),
@@ -148,12 +157,16 @@ class Generator:
                 "--device", self.args.device,
             ]  # fmt: skip
             # The prompt goes in through stdin, so a prompt starting with "-" is not taken for an option
-            result = subprocess.run(command, input=json.dumps([job]), capture_output=True, text=True)
+            result = subprocess.run(command, input=json.dumps([job]), capture_output=True, text=True, check=False)
             if result.returncode != 0:
                 log.error("image-gen failed with exit code %d:\n%s", result.returncode, result.stderr[-4000:])
                 if "OutOfMemoryError" in result.stderr or "out of memory" in result.stderr:
-                    raise ServiceError(HTTPStatus.SERVICE_UNAVAILABLE, f"GPU {self.args.device} ran out of memory, is it busy?")
-                raise ServiceError(HTTPStatus.INTERNAL_SERVER_ERROR, f"image generation failed (exit code {result.returncode})")
+                    raise ServiceError(
+                        HTTPStatus.SERVICE_UNAVAILABLE, f"GPU {self.args.device} ran out of memory, is it busy?"
+                    )
+                raise ServiceError(
+                    HTTPStatus.INTERNAL_SERVER_ERROR, f"image generation failed (exit code {result.returncode})"
+                )
             with Image.open(Path(folder) / "image.png") as image:
                 return image.convert("RGB")
 

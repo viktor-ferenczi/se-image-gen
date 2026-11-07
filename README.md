@@ -1,250 +1,102 @@
-# Space Engineers Plugin Template
+# LCD Image Generation
 
-[Client only version of this template](https://github.com/CometWorks/client-plugin-template)
+Space Engineers 1 plugins that turn a prompt written on an LCD surface into an image on that
+surface. Write `/ig <prompt>` as the text of a screen, for example `/ig a red fox in the snow`.
+A local image service generates the picture in the background, and the screen then shows it
+as color-character art at the highest resolution it can hold.
 
-## Prerequisites
+- **Server plugin** (Magnetar): generates on a dedicated server.
+- **Client plugin** (Pulsar): generates where the local game is the server, so offline and
+  when hosting a friends game. Players who join get the images through the game's normal LCD
+  sync and need no plugin. On a client that joined someone else's game it does nothing.
+- **Service** (`service/`): a small HTTP service that runs the
+  [MOSS-Image-SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) model through
+  `image-gen`. See [service/README.md](service/README.md).
 
-- [Space Engineers](https://store.steampowered.com/app/244850/Space_Engineers/)
-- [Python 3.12](https://python.org) (requires 3.12 or newer)
-- [Pulsar](https://github.com/SpaceGT/Pulsar) — plugin loader for Space Engineers (game client)
-- [Magnetar](https://magnetar.se) — the Space Engineers server with plugin support
-- [.NET Framework 4.8.1 Developer Pack](https://dotnet.microsoft.com/en-us/download/dotnet-framework/net481) and
-  [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
+Both plugins share all of their logic (`Shared/`) and read the same configuration.
 
-## Create your plugin project
+## How it works
 
-1. Click on **Use this template** (top right corner on GitHub) and follow the wizard to create your repository
-2. Clone your repository to have a local working copy
-3. Run `setup.py`, enter the name of your plugin project in `CapitalizedWords` format
-4. Let `setup.py` auto-detect your install locations or fill them in manually
-5. Open the solution in Visual Studio or Rider
-6. Make a test build
-7. Add the repository as a development folder to Pulsar (client) and Magnetar (server), then test that
-   the empty plugin can be enabled in both
-8. Replace the contents of this file with the description of your plugin
-9. Follow the TODO comments in the source code
-10. Look into the source code of other plugins for examples on how to patch the game
+- Any change of a surface's text goes through `MyTextPanelComponent.UpdateText`: a player's
+  edit, a programmable block's `WriteText`, network sync and loading the block. A postfix there
+  notes texts starting with `/ig ` when the local game is the server, and the next update
+  handles them on the game thread.
+- Single LCDs and every screen of a multi-screen block (cockpits, programmable blocks, button
+  panels) work the same way, each with its own size and aspect ratio. The screen's index is
+  its index in the block's surface list, the one the terminal and scripts use.
+- The prompt goes into the block's Custom Data as `Screen[<index>].Prompt: <prompt>` and a
+  blank line, with `\n` line endings like the rest of Custom Data. Line breaks in the prompt
+  become spaces there. A screen's earlier entry is replaced in place. If the entry does not fit
+  into the 64000 characters Custom Data allows, the prompt is discarded and nothing is
+  generated.
+- The HTTP call and the conversion to characters run on a worker thread. The game thread only
+  starts a job and later applies the result, which takes well under a millisecond.
+- The service generates the image at the screen's aspect ratio (about 512 x 512 pixels by
+  default) and scales it down to one pixel per character. The plugin maps each pixel to one of
+  the Monospace font's 512 color characters (U+E100 + r * 64 + g * 8 + b, 3 bits per channel),
+  with Floyd-Steinberg dithering.
+- It then switches the screen to text, the Monospace font, white font color, centered, no
+  padding, and the font size that fills the screen. The image replaces the prompt text. If the
+  screen's text changed while the image was generated, the result is dropped.
+- While the image is generated the prompt stays on the screen. Failures replace it with one
+  line starting with `[LcdImageGen]`. A prompt still on a screen when the world is saved is
+  generated again after loading.
 
-You may find the source code of these plugins inspirational:
-- [Performance Improvements](https://github.com/viktor-ferenczi/se-performance-improvements)
-- [Multigrid Projector](https://github.com/viktor-ferenczi/se-multigrid-projector)
-- [Toolbar Manager](https://github.com/viktor-ferenczi/se-toolbar-manager)
+### Resolution
 
-In case of questions please feel free to ask the SE plugin developer community on the
-[Pulsar](https://discord.gg/z8ZczP2YZY) Discord server in their relevant text channels. They also have dedicated
-channels for plugin ideas, should you look for a new one.
+A color character is a 37 x 37 unit square in the Monospace font (36 advance plus 1 spacing,
+37 line height). The game draws surface text at `FontSize * min(texture width, height) / 512`
+and the font at 28.8 / 37 of its size, so a character cell is
+`28.8 * FontSize * min(texture) / 512` texture pixels.
 
-_Good luck!_
+Two limits decide the grid: the text length (`MaxCharacters`, the game itself cuts surface text
+at 100000) and the smallest cell worth drawing (`MinCellPixels`, 2.88 texture pixels, which is
+font size 0.1 on a 512 pixel screen, the usual resolution of LCD art). The game rounds font
+sizes to 3 decimals, so the font size is picked on that grid. Examples:
 
-## Remarks
+| Screen | Texture | Visible | Grid | Font size |
+|---|---|---|---|---|
+| LCD Panel | 512 x 512 | 512 x 512 | 177 x 177 | 0.1 |
+| Wide LCD Panel | 1024 x 512 | 1024 x 512 | 355 x 177 | 0.1 |
+| Programmable block, large screen | 512 x 512 | 512 x 320 | 177 x 111 | 0.1 |
+| Programmable block, keyboard | 512 x 256 | 512 x 205 | 177 x 71 | 0.2 |
+| Cockpit seat, top center | 256 x 256 | 256 x 177 | 88 x 61 | 0.2 |
 
-### Plugin version
+## Configuration
 
-The plugin version lives in `Version.Build.props`, which **is** committed and imported by
-`Directory.Build.props`. Keeping the version separate from the local path overrides means it
-is shared by all contributors and stays under version control. Bump the version there.
+`LcdImageGen.cfg` in the game's user data folder (the Magnetar instance's data folder for the
+server, the game's AppData folder for the client), written with the defaults on first start:
 
-### Folder path overrides
+| Option | Default | Meaning |
+|---|---|---|
+| `Enabled` | `true` | Turns the plugin on |
+| `ServiceUrl` | `http://127.0.0.1:8183` | The image service |
+| `TimeoutSeconds` | `300` | Wait for an image, including time queued in the service |
+| `MaxPendingPerPlayer` | `1` | Prompts a player may have waiting, 0 for no limit. Prompts written by scripts or at world load have no player and no limit. |
+| `MaxCharacters` | `100000` | Longest art, the game's limit is 100000 |
+| `MinCellPixels` | `2.88` | Smallest character cell in texture pixels |
+| `Dither` | `true` | Floyd-Steinberg dithering |
+| `Moderation/Enabled` | `false` | Content moderation of the prompts, **not implemented yet**: does nothing, only logs a warning when enabled |
+| `Moderation/Prompt` | empty | Instructions for the moderating model, needed once moderation is implemented |
 
-`Directory.Build.props` **is** committed and declares the overridable folder paths with empty
-defaults:
+There is no permission check: anyone who can change a screen's text can generate an image.
 
-- `Bin64` — the folder containing `SpaceEngineers.exe`
-- `Dedicated64` — the folder containing `SpaceEngineersDedicated.exe`
-- `Pulsar` — the Pulsar folder the client plugin is deployed into after each build, empty by
-  default (see [Deployment](#deployment))
-- `Magnetar` — the Magnetar installation folder, the one holding the launcher executables
-  and their `Libraries`, which is where `PluginSdk.dll` is referenced from
-- `MagnetarData` — the Magnetar config folder the server plugin is deployed into, the one
-  holding `Local`, `Sources` and `Profiles`, empty by default (see [Deployment](#deployment))
+## Build and test
 
-It optionally imports `Directory.Build.props.user` from the repository root, which is **not
-committed** (matched by `*.user` in `.gitignore`), so each contributor keeps their own local
-paths there.
-
-To override a path manually, copy the first `PropertyGroup` of `Directory.Build.props` into
-`Directory.Build.props.user`, wrapped into a top-level `<Project>` element, and fill in your
-paths. `setup.py` writes that file for you with the auto-detected install locations, creating
-it if needed and keeping any other overrides already in it.
-
-Leaving `Bin64`, `Dedicated64` or `Magnetar` empty (or having no `Directory.Build.props.user`
-at all) falls back to the auto-detection in `Directory.Build.props`, which reads the Steam
-registry keys on Windows and the usual Steam locations on Linux, then resolves the game and the
-Dedicated Server through Steam's `libraryfolders.vdf`, so installs on a secondary Steam library
-are found as well. `Magnetar` defaults to the `Magnetar\` tree next to the server install on
-Windows and to `$XDG_CONFIG_HOME/Magnetar` (`~/.config/Magnetar`) on Linux.
-
-The build fails with a clear message if `Bin64`, `Dedicated64` or Magnetar's `PluginSdk.dll`
-cannot be resolved.
-
-`Pulsar` and `MagnetarData` are never auto-detected. Leaving them empty turns off deployment.
-
-### Deployment
-
-Builds don't deploy anything by default. Load your working copy through a development folder
-instead: start Pulsar or Magnetar with `-sources` and add it with the Sources button. The loader
-then compiles the plugin from source at startup.
-
-A deployed DLL shows up in the loader as a separate local plugin. If you later disable the
-development folder, that stale copy can still be enabled and shadow the published version of
-your plugin.
-
-To deploy anyway, set the loader folders in `Directory.Build.props.user`, or pass them to a
-single build with `dotnet build -p:Pulsar=... -p:MagnetarData=...`. The usual values:
-
-| Property       | Windows                 | Linux                    |
-|----------------|-------------------------|--------------------------|
-| `Pulsar`       | `$(APPDATA)\Pulsar`     | `$(HOME)/.config/Pulsar` |
-| `MagnetarData` | `$(Magnetar)\Magnetar`  | `$(Magnetar)/Magnetar`   |
-
-`$(Magnetar)` is the auto-detected Magnetar install folder. Its `Magnetar` subfolder holds
-the configuration, including `Local`, and both launchers (Legacy and Interim) use it.
-
-Each successful build then copies itself into its loader's `Local` plugin folder:
-
-| Project        | Build     | Deployed to                                       |
-|----------------|-----------|---------------------------------------------------|
-| `ClientPlugin` | `net48`   | `<Pulsar>/Legacy/Local/<PluginName>/`             |
-| `ClientPlugin` | `net10.0` | `<Pulsar>/Interim/Local/<PluginName>/`            |
-| `ServerPlugin` | `net10.0` | `<MagnetarData>/Local/`                           |
-
-Pulsar identifies a plugin by its folder, so the client DLL is copied as `plugin.dll`, its
-symbols as `plugin.pdb` and the PluginHub registration XML from the repository root as
-`plugin.xml`. Magnetar identifies a plugin by its DLL file name, so the server plugin is
-copied flat as `<PluginName>.dll`, with the MagnetarHub registration XML next to it as
-`<PluginName>.dll.xml`. Either way the loader shows the plugin under its friendly name and
-honours the runtime and platform restrictions declared in the XML.
-
-`Interim` is the Pulsar executable running Space Engineers 1 on .NET 10. It falls back to the
-`Legacy` data folder when `<Pulsar>/Interim` does not exist, and so does the deployment.
-(`<Pulsar>/Modern` belongs to Space Engineers 2 and is never a deployment target here.)
-`MagnetarInterim` is its dedicated server counterpart, but Magnetar keeps one config folder
-for both of its launchers, `<Magnetar>/Magnetar`, so only one build of the server plugin can
-be deployed: the `net10.0` one, which is also the only one on Linux, where only the Interim
-launchers exist. Run the launcher with `-useHome` or `-config` and set `MagnetarData` to
-that folder to deploy there instead.
-
-### Plugin configuration
-
-You can have a nice configuration dialog with little effort in the game client.
-Customize the `Config` class in the `ClientPlugin` project, just follow the examples.
-It supports many different data types, including key binding. Once you have more
-options than can fit on the screen the dialog will have a vertical scrollbar.
-
-![Example config dialog](Docs/ConfigDialogExample.png "Example config dialog")
-
-A new option may need a different default on a new deployment than on an existing one, for
-example to turn a feature on only for new users. `ConfigStorage.IsNewDeployment` tells them
-apart: it is `true` if the config file did not exist yet when the config was loaded, and it
-keeps that value after the first save writes the file. Use it as the option's default:
-
-```csharp
-private bool newOption = ConfigStorage.IsNewDeployment;
+```bash
+dotnet build                               # both plugins
+dotnet test Tests                          # fitting, art and Custom Data logic
+uvx --with Pillow pytest service           # the service, in stub mode
+uv run --no-project --with httpx --with Pillow python tests/game/rig.py offline
+uv run --no-project --with httpx --with Pillow python tests/game/rig.py ds
 ```
 
-A config file written before the option existed has no value for it, so the option keeps that
-default, `false` in this case. A config file that exists but can't be read counts as an existing
-deployment too.
+`tests/game/rig.py` runs the game: `offline` loads a world with the client plugin, `ds` starts an
+isolated Magnetar with the server plugin and joins it with a client that has no plugin. Both
+paste a station with a programmable block, a square and a wide LCD and a cockpit seat, write
+prompts on six screens with the block's script and check the grids, fonts, Custom Data, the
+discard of an entry that does not fit, and that the game thread never waited. It follows the
+workspace's slot and RAM rules and uses the service in stub mode unless given `--service`.
 
-The server plugin configuration works differently, please see the `Config` folder
-of the `Shared` project for that. The client side `Config` class is not integrated
-with the server side configuration, currently.
-
-`PersistentConfig<T>` has its own `IsNewDeployment` property with the same meaning, for its own
-config file. `Load` writes the file if it is missing, so the option's field initializer can't
-ask for it. Set the option right after loading instead, see the `Init` method of `Plugin`:
-
-```csharp
-if (config.IsNewDeployment) config.Data.NewOption = true;
-```
-
-The change is saved shortly after, as with any other change to the config.
-
-### Shared project
-
-- Put any code you can share between the plugin projects into the Shared project.
-  Try to keep the redundancy at the minimum.
-
-- The DLLs required by your Shared code need to be added as a dependency to all the projects,
-  even if some of the code is not used by one of the projects.
-
-- You can delete the projects you don't need. If you want only a single project,
-  then move over what is in the Shared one, then you can delete Shared.
-
-### How to prevent the potential crash after game updates
-
-Please use the `EnsureCode` attribute on patch methods to safely skip loading the plugin
-with an error logged should the code in any of the methods patched would change as part of
-a game update. It is a good way to prevent blaming crashes on your plugin after game updates,
-so your plugin can remain safely enabled (but effectively disabled) until you have a chance
-to release an update for compatibility with the new game version. Please see the examples in
-the `Shared/Patches` folder on how to use this attribute.
-
-The hexadecimal hash code is logged in case of a mismatch, so you can read them from the logs
-for any new method you patch, just leave the string initially empty in the `EnsureCode`
-attribute, then replace with the value from the error log line after you run your plugin
-with the patch for the first time.
-
-On Proton (Linux) this check tends to cause issues, therefore it is automatically skipped
-when the plugin detects it is running under Wine/Proton.
-
-### Debugging
-
-- Always use a debug build if you want to set breakpoints and see variable values.
-- A debug build defines `DEBUG`, so you can add conditional code in `#if DEBUG` blocks.
-- While debugging a specific target unload the other one. It prevents the IDE to be confused.
-- If breakpoints do not "stick" or do not work, then make sure that:
-  - Other projects are unloaded, only the debugged one and Shared are loaded.
-  - Debugger is attached to the running process.
-  - You are debugging the code which is running (no code changes made since the build).
-- Transpiler patches will write a `harmony.log.txt` file to your `Desktop` while running `Debug`
-  builds. Never release a debug build to your users, because that would litter their desktop
-  as well.
-- To debug transpiler changes to the IL code it is most practical to generate the files
-  of the method's IL code before and after the change made, so you can just diff them.
-  Please see the transpiler example under the `Shared/Patches` folder for the details.
-
-### Accessing internal, protected and private members in game code
-
-Enable the Krafs publicizer to significantly reduce the amount of reflections you need to write.
-
-This can be done by systematically uncommenting the code sections marked with "Uncomment to enable publicizer support".
-Make sure not to miss any of those. List the game assemblies you need to publicize in `GameAssembliesToPublicize.cs`. 
-In case of problems read about the [Krafs Publicizer](https://github.com/krafs/Publicizer) or reach out on the [Pulsar](https://discord.gg/z8ZczP2YZY) Discord server.
-
-### AI assisted plugin development
-
-Please consider using [CometWorks/skills](https://github.com/CometWorks/skills) for better outcomes.
-
-### Troubleshooting
-
-- If the IDE looks confused, then restarting it and the debugged game usually works.
-- If the restart did not work, then try to delete caches used by your IDE and restart.
-- If your build fails to copy the plugin into the `Local` folder, then something locks the DLL file.
-- Look for running game or server processes (maybe stuck running in the background) and kill them.
-
-### Release
-
-- Always make your final release from a RELEASE build. (More optimized, removes debug code.)
-- Always test your RELEASE build before publishing. Sometimes it behaves differently.
-- In case of client plugins the Pulsar compiles your code, watch out for differences.
-
-### Publishing your plugin
-
-- Register **client** plugins into [PluginHub](https://github.com/StarCpt/PluginHub/),
-  so they become available in Pulsar.
-- Register **server** plugins into [MagnetarHub](https://github.com/CometWorks/magnetar-hub),
-  so they become available in Magnetar.
-
-### Communication
-
-- In your documentation always include how players or server admins should report bugs.
-- Try to be reachable and respond on a timely manner over your communication channels.
-- Be open for constructive critics.
-
-### Abandoning your project
-
-- Always consider finding a new maintainer, ask around at least once.
-- If you ever abandon the project, then make it clear on its GitHub page.
-- Abandoned projects should be made hidden on PluginHub and MagnetarHub.
-- Keep the code available on GitHub, so it can be forked and continued by others.
+The plugins load from this folder as development folders: `LcdImageGenServer.xml` in Magnetar,
+`LcdImageGenClient.xml` in Pulsar.

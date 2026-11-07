@@ -5,23 +5,21 @@
     <Id>A8BA1F4C-E820-4809-92E6-484ED67E87D3</Id>
 
     <!-- GitHub repository ID -->
-    <RepoId>todo-github-user/project-name</RepoId>
+    <RepoId>CometWorks/lcd-image-gen</RepoId>
 
     <!-- The name of your plugin that will appear in the plugin list -->
-    <FriendlyName>TODO LcdImageGenServer</FriendlyName>
+    <FriendlyName>LCD Image Generation (server)</FriendlyName>
 
     <!-- The author name that you want to appear in the plugin list -->
-    <Author>TODO Author Name</Author>
+    <Author>CometWorks</Author>
 
     <!-- Optional tooltip for the plugin in the plugin list -->
-    <Tooltip>TODO Short description</Tooltip>
+    <Tooltip>Write /ig &lt;prompt&gt; on an LCD to show a generated image there</Tooltip>
 
     <!-- Optional plugin description. If omitted, this will be the same as the Tooltip. 1000 characters max. -->
-    <Description>TODO Long description, multiple lines.
-
-        This text is shown on the plugin details panel in a scrollable text box.
-
-        You can use links here, players can click on them. For example, add a Discord invite.
+    <Description>Write /ig followed by a prompt as the text of an LCD or any other screen, and a locally running image generation service draws the picture onto that screen in color characters.
+        Runs on the dedicated server; players need no plugin.
+        Needs the image service from the plugin's repository.
     </Description>
 
     <!-- Only source code in the Directory entries listed in SourceDirectories is compiled. Exclude any test projects or similar. -->
@@ -59,7 +57,7 @@
     -->
 
     <!-- The current plugin version's commit hash -->
-    <Commit>TODO Git commit hash</Commit>
+    <Commit>TODO commit hash once the repository exists</Commit>
 
     <!-- Optional list of alternate versions of the plugin, use it for test or custom builds
     <AlternateVersions>

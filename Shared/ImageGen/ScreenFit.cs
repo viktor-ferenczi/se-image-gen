@@ -42,8 +42,12 @@ public readonly struct ScreenFit
         if (surfaceWidth < 1 || surfaceHeight < 1 || textureWidth < 1 || textureHeight < 1)
             throw new ArgumentException("Empty surface");
 
-        var pixelsPerFontSize = CellPixelsPerFontSize * Math.Min(textureWidth, textureHeight) / 512f;
-        var cell = Math.Max(minCellPixels, (float)Math.Sqrt(surfaceWidth * surfaceHeight / maxCharacters));
+        var pixelsPerFontSize =
+            CellPixelsPerFontSize * Math.Min(textureWidth, textureHeight) / 512f;
+        var cell = Math.Max(
+            minCellPixels,
+            (float)Math.Sqrt(surfaceWidth * surfaceHeight / maxCharacters)
+        );
 
         // The game rounds FontSize to 3 decimals, so search on that grid
         var thousandths = Math.Max(1, (int)Math.Ceiling(cell / pixelsPerFontSize * 1000f - 1e-3f));

@@ -10,7 +10,9 @@ public static class LcdArt
     public static string FromRgb(byte[] rgb, int columns, int rows, bool dither)
     {
         if (rgb.Length != columns * rows * 3)
-            throw new ArgumentException($"Expected {columns * rows * 3} bytes of RGB for {columns}x{rows}, got {rgb.Length}");
+            throw new ArgumentException(
+                $"Expected {columns * rows * 3} bytes of RGB for {columns}x{rows}, got {rgb.Length}"
+            );
 
         // Floyd-Steinberg error diffusion over the current and the next row
         var current = new float[(columns + 2) * 3];

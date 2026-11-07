@@ -10,7 +10,13 @@ namespace Shared.ImageGen;
 public static class ImageGenClient
 {
     // Returns the image as columns x rows RGB bytes, already scaled to the character grid
-    public static byte[] Generate(string serviceUrl, string prompt, int columns, int rows, int timeoutSeconds)
+    public static byte[] Generate(
+        string serviceUrl,
+        string prompt,
+        int columns,
+        int rows,
+        int timeoutSeconds
+    )
     {
         var body = $"{{\"prompt\":{JsonString(prompt)},\"columns\":{columns},\"rows\":{rows}}}";
 
@@ -40,7 +46,9 @@ public static class ImageGenClient
         {
             using (response)
             using (var reader = new StreamReader(response.GetResponseStream()))
-                throw new ImageGenException(ErrorMessage(reader.ReadToEnd(), (int)response.StatusCode));
+                throw new ImageGenException(
+                    ErrorMessage(reader.ReadToEnd(), (int)response.StatusCode)
+                );
         }
         catch (WebException e)
         {
@@ -51,7 +59,9 @@ public static class ImageGenClient
     private static string ErrorMessage(string body, int status)
     {
         var match = Regex.Match(body, "\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
-        return match.Success ? Regex.Unescape(match.Groups[1].Value) : $"Image service error {status}";
+        return match.Success
+            ? Regex.Unescape(match.Groups[1].Value)
+            : $"Image service error {status}";
     }
 
     private static string JsonString(string text)

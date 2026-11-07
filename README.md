@@ -13,6 +13,11 @@ as color-character art at the highest resolution it can hold.
   [MOSS-Image-SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) model through
   `image-gen`. See [service/README.md](service/README.md).
 
+The same works from chat: look at a screen within 10 m and send `/ig <prompt>` or `!ig <prompt>`.
+On a block with several screens, `/ig #2 <prompt>` picks screen 2 (counted from 0, as in the
+Custom Data history); without a number it is screen 0. The plugin answers in chat, also when
+no screen is in sight, the player has no access to the block or has an image in progress.
+
 Both plugins share all of their logic (`Shared/`) and read the same configuration.
 
 ## How it works
@@ -21,6 +26,13 @@ Both plugins share all of their logic (`Shared/`) and read the same configuratio
   edit, a programmable block's `WriteText`, network sync and loading the block. A postfix there
   notes texts starting with `/ig ` when the local game is the server, and the next update
   handles them on the game thread.
+- A chat command ends there too: the server casts a ray from the player's eyes, takes the
+  block it hits, checks terminal access and writes `/ig <prompt>` on the screen. The server
+  can't tell which screen of a cockpit is under the crosshair (the screen areas exist only in
+  the client's render models), hence the `#<screen>` number. Vanilla clients send unknown
+  `/` commands to the server like normal chat, so both prefixes reach it. Messages typed on the
+  host or offline arrive through `MessageEnteredSender`, other players' through the
+  multiplayer `ChatMessageReceived` event.
 - Single LCDs and every screen of a multi-screen block (cockpits, programmable blocks, button
   panels) work the same way, each with its own size and aspect ratio. The screen's index is
   its index in the block's surface list, the one the terminal and scripts use.
@@ -79,7 +91,8 @@ server, the game's AppData folder for the client), written with the defaults on 
 | `Moderation/Enabled` | `false` | Content moderation of the prompts, **not implemented yet**: does nothing, only logs a warning when enabled |
 | `Moderation/Prompt` | empty | Instructions for the moderating model, needed once moderation is implemented |
 
-There is no permission check: anyone who can change a screen's text can generate an image.
+There is no extra permission check: anyone who can change a screen's text can generate an image,
+and the chat command needs terminal access to the block.
 
 ## Build and test
 

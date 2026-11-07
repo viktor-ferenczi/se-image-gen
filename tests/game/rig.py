@@ -530,7 +530,7 @@ def report(remote: RemoteAPI, grid: int) -> dict:
             state[(name, index)] = {
                 "content": parts[3], "font": parts[4], "fontSize": float(parts[5]), "padding": float(parts[6]),
                 "alignment": parts[7], "texture": parts[8], "surface": parts[9], "length": int(parts[10]),
-                "columns": cols, "rows": rows, "hash": int(parts[12]), "head": "|".join(parts[13:]),
+                "columns": cols, "rows": rows, "samples": parts[12], "head": "|".join(parts[13:]),
             }  # fmt: skip
         elif parts[0] == "C":
             state[(parts[1], "data")] = (int(parts[2]), "|".join(parts[3:]).replace("\\n", "\n"))
@@ -542,11 +542,9 @@ def write(remote: RemoteAPI, grid: int, block: str, index: int, text: str) -> No
     time.sleep(0.3)
 
 
-def surface_hash(text: str) -> int:
-    h = 0
-    for c in text:
-        h = (h * 31 + ord(c)) & 0xFFFFFFFF
-    return h - (1 << 32) if h >= 1 << 31 else h
+def samples(text: str) -> str:
+    """16 characters spread over the text as hex code points, like the script's report"""
+    return "".join(f"{ord(text[len(text) * k // 16]):04x}" for k in range(16)) if text else ""
 
 
 # The grids and font sizes the plugin must pick for each screen (Tests/ImageGenTests.cs has the math)
@@ -626,8 +624,16 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         "the service ran the jobs one at a time",
         f"{len(prompts)} images in {elapsed:.1f} s with {STUB_SECONDS:g} s each",
     )
+
+    def updates_logged():
+        found = [float(m) for m in re.findall(r"longest plugin update ([\d.]+) ms", game_log())]
+        return found if len(found) >= len(prompts) else None
+
+    try:
+        updates = wait_until(updates_logged, 15, "the plugin's log lines")
+    except TimeoutError:
+        updates = [float(m) for m in re.findall(r"longest plugin update ([\d.]+) ms", game_log())]
     log = game_log()
-    updates = [float(m) for m in re.findall(r"longest plugin update ([\d.]+) ms", log)]
     c.check(
         len(updates) >= len(prompts) and max(updates) < 20,
         "the game thread never waited for generation",
@@ -637,6 +643,9 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         "Content moderation is enabled in the configuration, but it is not implemented yet" in log,
         "moderation config is read and reported as not implemented",
     )
+
+    stand_before(remote, "LargeLCDPanelWide", 9)
+    screenshot(remote, "screens")
 
     # A new prompt on a screen replaces its CustomData entry
     write(remote, grid, "LCD", 0, "/ig a blue owl at night")
@@ -679,6 +688,113 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     state = report(remote, grid)
     c.check(state[("PB", 1)]["head"] == "Hello /ig world", "plain text is left alone", state[("PB", 1)]["head"])
 
+    check_chat(c, remote, grid, game_log)
+
+
+# Unit vector from the grid toward the side its screens face, taken from where the character
+# stood when the grid was pasted in front of it
+FRONT: list[float] | None = None
+
+
+def stand_before(remote: RemoteAPI, subtype: str, distance: float) -> list[float]:
+    """Teleports the character to the screen side of a block and turns it to the block's center.
+    The character starts on the screen side, since the grid is pasted in front of it facing it.
+    A negative distance stands behind the block"""
+    global FRONT
+    block = remote.find_nearby_blocks(subtype=subtype, max_distance=200, limit=1)[0]
+    target = block["worldPosition"]
+    if FRONT is None:
+        here = remote.get_character()["position"]
+        away = [h - t for h, t in zip(here, target)]
+        length = sum(a * a for a in away) ** 0.5
+        FRONT = [a / length for a in away]
+    spot = [t + f * distance for t, f in zip(target, FRONT)]
+    remote.character_teleport(*spot)
+    wait_until(
+        lambda: sum((p - q) ** 2 for p, q in zip(remote.get_character()["position"], spot)) < 4,
+        20,
+        f"the character to arrive at the {subtype}",
+        0.5,
+    )
+    remote.character_look_at(*target, tolerance=0.5)
+    time.sleep(1)
+    return target
+
+
+def chat_replies(remote: RemoteAPI, before: dict) -> list[str]:
+    seen = {(h.get("sender"), h.get("text"), h.get("timestamp")) for h in before.get("hud", [])}
+    after = remote.get_chat_messages()
+    return [
+        h.get("text", "")
+        for h in after.get("hud", [])
+        if h.get("sender") == "LcdImageGen" and (h.get("sender"), h.get("text"), h.get("timestamp")) not in seen
+    ]
+
+
+def chat(remote: RemoteAPI, text: str, expect: str) -> list[str]:
+    before = remote.get_chat_messages()
+    remote.send_chat(text)
+    try:
+        return wait_until(
+            lambda: (r := chat_replies(remote, before)) and any(expect in line for line in r) and r,
+            15,
+            f"a reply to {text!r}",
+            0.5,
+        )
+    except TimeoutError:
+        return chat_replies(remote, before)
+
+
+def check_chat(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
+    # /ig while looking at the LCD
+    stand_before(remote, "LargeLCDPanel", 4)
+    replies = chat(remote, "/ig a sunset over the sea", "Generating")
+    c.check(
+        any("Generating an image on LCD screen #0" in r for r in replies),
+        "chat /ig aimed at an LCD is accepted",
+        repr(replies),
+    )
+    state = wait_until(
+        lambda: history_entry(s := report(remote, grid), "LCD", 0) == "a sunset over the sea"
+        and s[("LCD", 0)]["columns"]
+        and "Done: " in game_log().split("Chat command of player", 1)[-1]
+        and s,
+        60,
+        "the chat command's image",
+    )
+    check_image(c, state, ("LCD", 0))
+    screenshot(remote, "lcd-chat")
+
+    # !ig #1 at the programmable block's keyboard, then a second command while it runs
+    stand_before(remote, "LargeProgrammableBlock", 4)
+    replies = chat(remote, "!ig #1 a tiny robot", "Generating")
+    c.check(
+        any("Generating an image on PB screen #1" in r for r in replies),
+        "chat !ig #1 aimed at a block with two screens picks screen 1",
+        repr(replies),
+    )
+    replies = chat(remote, "/ig #0 a second robot", "in progress")
+    c.check(
+        any("in progress already" in r for r in replies),
+        "a second chat prompt while one is pending is refused (one per player)",
+        repr(replies),
+    )
+    state = wait_until(
+        lambda: history_entry(s := report(remote, grid), "PB", 1) == "a tiny robot" and s[("PB", 1)]["columns"] and s,
+        60,
+        "the !ig image",
+    )
+    check_image(c, state, ("PB", 1))
+    c.check(history_entry(state, "PB", 0) == "a robot reading a book", "the refused prompt left screen 0 alone")
+
+    # Looking at nothing
+    here = remote.get_character()["position"]
+    remote.character_look_at(here[0], here[1] + 100, here[2], tolerance=2)
+    replies = chat(remote, "/ig nothing to see", "Look at a screen")
+    c.check(
+        any("Look at a screen" in r for r in replies), "chat /ig without a screen in sight gets a reply", repr(replies)
+    )
+
 
 def screenshot(remote: RemoteAPI, name: str) -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -689,10 +805,22 @@ def screenshot(remote: RemoteAPI, name: str) -> None:
         print(f"screenshot failed: {e}")
 
 
-def paste_grid(remote: RemoteAPI) -> dict:
-    grids = remote.paste_blueprint(xml=blueprint_xml())
-    grid = grids[0]
-    wait_until(lambda: report(remote, grid["entityId"]).get(("LCD", "data")) is not None, 90, "the test script")
+def paste_grid(remote: RemoteAPI) -> int:
+    """Pastes the test grid in front of the character and returns its entity id. On a joined
+    client the paste answers with another grid's id, so the grid is looked up by name"""
+    remote.paste_blueprint(xml=blueprint_xml())
+    grid = wait_until(
+        lambda: next((g["entityId"] for g in remote.list_grids() if g["name"] == "LcdImageGen Test"), None),
+        60,
+        "the pasted grid",
+    )
+    # The server ignores script runs from farther than 15 m
+    stand_before(remote, "LargeLCDPanelWide", 9)
+    # A dedicated server refuses to run a pasted block's script, its owner changed, until it is
+    # recompiled (the terminal's Recompile button)
+    pb = wait_until(lambda: remote.get_block(grid, PB).get("entityId"), 60, "the programmable block")
+    remote.recompile_pb(pb)
+    wait_until(lambda: report(remote, grid).get(("LCD", "data")) is not None, 90, "the test script")
     return grid
 
 
@@ -717,16 +845,16 @@ def run(mode: str, service: str | None) -> int:
             game_log = server_game_log
         ensure_character(remote)
         grid = paste_grid(remote)
-        print(f"pasted grid {grid['entityId']} at {grid.get('position')}", flush=True)
-        run_checks(c, remote, grid["entityId"], game_log)
+        print(f"pasted grid {grid}", flush=True)
+        run_checks(c, remote, grid, game_log)
         if mode == "ds":
             # The joined client has no plugin: the images came by the game's LCD sync
-            state = report(remote, grid["entityId"])
+            state = report(remote, grid)
             for key, cell in ((("LCD", 0), LCD), (("PB", 0), PB)):
-                surface = remote.get_surface(grid["entityId"], cell, key[1])
+                surface = remote.get_surface(grid, cell, key[1])
                 texts = [s.get("data") or "" for s in surface.get("sprites", []) if s.get("type") == "TEXT"]
                 c.check(
-                    any(surface_hash(t) == state[key]["hash"] for t in texts),
+                    any(len(t) == state[key]["length"] and samples(t) == state[key]["samples"] for t in texts),
                     f"the joined client draws the server's image on {key[0]} screen {key[1]}",
                     f"{len(texts)} text sprites, lengths {[len(t) for t in texts]}, server {state[key]['length']}",
                 )

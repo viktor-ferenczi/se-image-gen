@@ -57,6 +57,8 @@ SERVER_PLUGIN_ID = "A8BA1F4C-E820-4809-92E6-484ED67E87D3"
 RENDER_GIB = 5.5
 SERVER_GIB = 4.0
 STUB_SECONDS = 4.0
+# Seconds to wait for all images, longer with the real model (--service)
+IMAGES_TIMEOUT = 60 + 3 * STUB_SECONDS * 6
 
 
 def _slot() -> dict[str, int]:
@@ -607,7 +609,7 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         return state if all(state.get(k, {}).get("columns") for k in prompts) else None
 
     try:
-        state = wait_until(all_done, 60 + 3 * STUB_SECONDS * len(prompts), "all images", 2)
+        state = wait_until(all_done, IMAGES_TIMEOUT, "all images", 2)
     except TimeoutError:
         state = report(remote, grid)
     elapsed = time.monotonic() - started
@@ -655,7 +657,7 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         done = s.get(("LCD", 0), {}).get("columns") and history_entry(s, "LCD", 0) == "a blue owl at night"
         return s if done and "Done: " in game_log().split("a blue owl at night", 1)[-1] else None
 
-    state = wait_until(second, 60, "the second LCD image")
+    state = wait_until(second, IMAGES_TIMEOUT, "the second LCD image")
     _, data = state[("LCD", "data")]
     c.check(
         data == "Screen[0].Prompt: a blue owl at night\n\n",
@@ -759,7 +761,7 @@ def check_chat(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         and s[("LCD", 0)]["columns"]
         and "Done: " in game_log().split("Chat command of player", 1)[-1]
         and s,
-        60,
+        IMAGES_TIMEOUT,
         "the chat command's image",
     )
     check_image(c, state, ("LCD", 0))
@@ -781,7 +783,7 @@ def check_chat(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     )
     state = wait_until(
         lambda: history_entry(s := report(remote, grid), "PB", 1) == "a tiny robot" and s[("PB", 1)]["columns"] and s,
-        60,
+        IMAGES_TIMEOUT,
         "the !ig image",
     )
     check_image(c, state, ("PB", 1))
@@ -827,6 +829,9 @@ def paste_grid(remote: RemoteAPI) -> int:
 def run(mode: str, service: str | None) -> int:
     c = Checks()
     stop_all()
+    global IMAGES_TIMEOUT
+    if service:
+        IMAGES_TIMEOUT = 900
     url = service or start_service(STUB_SECONDS)
     try:
         if mode == "offline":

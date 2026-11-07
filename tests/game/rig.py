@@ -603,6 +603,9 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     started = time.monotonic()
     for (block, index), prompt in prompts.items():
         write(remote, grid, block, index, f"/ig {prompt}")
+    # The prompts on the screens, before the first image arrives
+    time.sleep(1)
+    screenshot(remote, "prompts")
 
     def all_done():
         state = report(remote, grid)
@@ -632,7 +635,7 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
         return found if len(found) >= len(prompts) else None
 
     try:
-        updates = wait_until(updates_logged, 15, "the plugin's log lines")
+        updates = wait_until(updates_logged, 60, "the plugin's log lines (the game flushes its log late)")
     except TimeoutError:
         updates = [float(m) for m in re.findall(r"longest plugin update ([\d.]+) ms", game_log())]
     log = game_log()

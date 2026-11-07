@@ -11,7 +11,8 @@ as color-character art at the highest resolution it can hold.
   sync and need no plugin. On a client that joined someone else's game it does nothing.
 - **Service** (`service/`): a small HTTP service that runs the
   [MOSS-Image-SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) model through
-  `image-gen`. See [service/README.md](service/README.md).
+  `image-gen` (PyTorch, CUDA) or a stable-diffusion.cpp `sd-server` (Vulkan, for AMD cards).
+  See [service/README.md](service/README.md).
 
 The same works from chat: look at a screen within 10 m and send `/ig <prompt>` or `!ig <prompt>`.
 On a block with several screens, `/ig #2 <prompt>` picks screen 2 (counted from 0, as in the

@@ -6,17 +6,21 @@
 """HTTP service that generates images for the LcdImageGen plugins.
 
     lcd_imagegen_service.py                  # MOSS-Image-SFT through image-gen on cuda:1
+    lcd_imagegen_service.py --sd-server http://127.0.0.1:18860   # through a running sd-server
     lcd_imagegen_service.py --stub 3         # test pattern after 3 seconds, no GPU
 
 POST /generate with {"prompt": "...", "columns": C, "rows": R} answers C x R x 3 bytes of RGB:
 the image generated at the grid's aspect ratio and scaled down to one pixel per character.
 Errors answer {"error": "..."}. GET /health answers {"status": "ok", "busy": bool, "queued": n}.
 
-One job runs at a time, the others wait in a queue. Each job runs image-gen as a separate process,
-which loads the model, generates and exits, so the GPU is free between jobs. See README.md.
+One job runs at a time, the others wait in a queue. With image-gen each job is a separate process,
+which loads the model, generates and exits, so the GPU is free between jobs. An sd-server from
+stable-diffusion.cpp keeps the model loaded instead, see README.md.
 """
 
 import argparse
+import base64
+import io
 import hashlib
 import json
 import logging
@@ -27,6 +31,8 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -123,6 +129,8 @@ class Generator:
         if self.args.stub is not None:
             time.sleep(self.args.stub)
             image = stub_image(prompt, width, height)
+        elif self.args.sd_server:
+            image = self._run_sd_server(prompt, width, height)
         else:
             image = self._run_model(prompt, width, height)
         log.info(
@@ -170,6 +178,27 @@ class Generator:
             with Image.open(Path(folder) / "image.png") as image:
                 return image.convert("RGB")
 
+    def _run_sd_server(self, prompt: str, width: int, height: int) -> Image.Image:
+        request = {
+            "prompt": prompt,
+            "negative_prompt": self.args.negative,
+            "width": width,
+            "height": height,
+            "steps": self.args.steps,
+            "cfg_scale": self.args.cfg,
+            "seed": -1,
+        }
+        url = self.args.sd_server.rstrip("/") + "/sdapi/v1/txt2img"
+        post = urllib.request.Request(url, json.dumps(request).encode(), {"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(post, timeout=self.args.sd_timeout) as response:
+                images = json.load(response)["images"]
+        except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as error:
+            log.error("sd-server request failed: %s", error)
+            raise ServiceError(HTTPStatus.BAD_GATEWAY, f"sd-server failed: {error}")
+        with Image.open(io.BytesIO(base64.b64decode(images[0]))) as image:
+            return image.convert("RGB")
+
 
 def make_handler(generator: Generator):
     class Handler(BaseHTTPRequestHandler):
@@ -216,6 +245,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8183)
     parser.add_argument("--image-gen", default=str(Path.home() / "bin" / "image-gen"), help="image-gen command")
     parser.add_argument("--device", default="cuda:1", help="GPU the model runs on")
+    parser.add_argument("--sd-server", metavar="URL", help="generate through this stable-diffusion.cpp sd-server")
+    parser.add_argument("--sd-timeout", type=float, default=600, help="seconds to wait for sd-server")
     parser.add_argument("--min-free-gib", type=float, default=17, help="free VRAM needed before a job starts")
     parser.add_argument("--pixels", type=int, default=512 * 512, help="pixels of a generated image")
     parser.add_argument("--steps", type=int, default=8, help="sampling steps")
@@ -233,7 +264,12 @@ def main() -> None:
         stream=sys.stderr,
     )
     server = ThreadingHTTPServer((args.host, args.port), make_handler(Generator(args)))
-    mode = f"stub, {args.stub:g} s" if args.stub is not None else f"{args.image_gen} on {args.device}"
+    if args.stub is not None:
+        mode = f"stub, {args.stub:g} s"
+    elif args.sd_server:
+        mode = f"sd-server at {args.sd_server}"
+    else:
+        mode = f"{args.image_gen} on {args.device}"
     log.info("listening on http://%s:%d (%s)", args.host, args.port, mode)
     try:
         server.serve_forever()

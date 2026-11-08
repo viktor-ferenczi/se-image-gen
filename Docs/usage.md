@@ -7,7 +7,7 @@ Write `/ig <prompt>` as the text of a screen, in the terminal or from a programm
 so scripts can generate images too.
 
 The prompt stays on the screen while the image is generated, then the image replaces it. A
-failure replaces it with one line starting with `[LcdImageGen]`. The prompt is kept in the
+failure replaces it with one line starting with `[ImageGen]`. The prompt is kept in the
 block's Custom Data as `Screen[<index>].Prompt: <prompt>`, so it can be copied back later,
 unless `WriteCustomData` is turned off.
 

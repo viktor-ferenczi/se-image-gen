@@ -32,8 +32,8 @@ namespace Shared.ImageGen;
 // Everything here runs on the game thread, except the HTTP call and the conversion to characters.
 public static class ImageGenController
 {
-    private const string ErrorPrefix = "[LcdImageGen] ";
-    private const string ChatAuthor = "LcdImageGen";
+    private const string ErrorPrefix = "[ImageGen] ";
+    private const string ChatAuthor = "ImageGen";
 
     // How far a chat command reaches from the player's eyes
     private const double ChatReach = 10.0;

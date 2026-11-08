@@ -32,7 +32,7 @@
   padding, and the font size that fills the screen. The image replaces the prompt text. If the
   screen's text changed while the image was generated, the result is dropped.
 - While the image is generated the prompt stays on the screen. Failures replace it with one
-  line starting with `[LcdImageGen]`. A prompt still on a screen when the world is saved is
+  line starting with `[ImageGen]`. A prompt still on a screen when the world is saved is
   generated again after loading.
 
 ## Resolution

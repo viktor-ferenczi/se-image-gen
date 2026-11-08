@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <RootNamespace>ServerPlugin</RootNamespace>
-    <AssemblyName>LcdImageGen</AssemblyName>
+    <AssemblyName>ImageGen</AssemblyName>
     <LangVersion>14</LangVersion>
 
     <!-- Target platforms on Windows and Linux -->

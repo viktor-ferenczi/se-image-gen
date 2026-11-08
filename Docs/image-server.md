@@ -76,7 +76,7 @@ To start it with the machine, a systemd unit like this one works (paths to adjus
 
 ```ini
 [Unit]
-Description=sd-server for LCD Image Generation
+Description=sd-server for Image Generation
 After=network-online.target
 
 [Service]

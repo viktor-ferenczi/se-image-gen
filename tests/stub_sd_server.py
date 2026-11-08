@@ -8,7 +8,8 @@
     tests/stub_sd_server.py --port 1234 --seconds 4
 
 Answers POST /sdapi/v1/txt2img like sd-server does, with a test pattern after SECONDS,
-one request at a time. Logs "generated WxH in S s: prompt" per image.
+one request at a time. Logs "generated WxH in S s: prompt" per image and "in flight N" per
+request, N counting the ones it has received and not answered yet, this one included.
 """
 
 import argparse
@@ -46,6 +47,8 @@ def stub_image(prompt: str, width: int, height: int) -> Image.Image:
 
 def make_handler(seconds: float, keep: Path | None):
     lock = threading.Lock()
+    in_flight = [0]
+    counter_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -69,11 +72,18 @@ def make_handler(seconds: float, keep: Path | None):
             except (ValueError, KeyError, TypeError) as error:
                 self.send_json(400, {"error": f"invalid request: {error}"})
                 return
-            with lock:
-                started = time.monotonic()
-                time.sleep(seconds)
-                image = stub_image(prompt, width, height)
-                log.info("generated %dx%d in %.1f s: %s", width, height, time.monotonic() - started, prompt)
+            with counter_lock:
+                in_flight[0] += 1
+                log.info("in flight %d", in_flight[0])
+            try:
+                with lock:
+                    started = time.monotonic()
+                    time.sleep(seconds)
+                    image = stub_image(prompt, width, height)
+                    log.info("generated %dx%d in %.1f s: %s", width, height, time.monotonic() - started, prompt)
+            finally:
+                with counter_lock:
+                    in_flight[0] -= 1
             if keep:
                 keep.mkdir(parents=True, exist_ok=True)
                 image.save(keep / f"{time.strftime('%Y%m%d-%H%M%S')}-{width}x{height}.png")

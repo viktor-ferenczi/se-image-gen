@@ -16,6 +16,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\ImageGenClient.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\ImageGenController.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\LcdArt.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ImageGen\PendingJobs.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\PromptHistory.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\RgbImage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\ScreenFit.cs" />

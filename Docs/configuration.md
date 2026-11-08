@@ -13,7 +13,8 @@ settings.
 | `ImagePixels` | `262144` | Pixels of a generated image (512 x 512), before it is scaled down to the grid |
 | `Steps` | `8` | Sampling steps, fewer is faster |
 | `CfgScale` | `3` | Guidance scale |
-| `MaxPendingPerPlayer` | `1` | Prompts a player may have waiting, 0 for no limit. Prompts written by scripts or at world load have no player and no limit. |
+| `MaxPendingPerPlayer` | `1` | Prompts a player may have waiting, 0 for no limit. Prompts written by scripts or at world load have no player and count only in `MaxPendingTotal`. |
+| `MaxPendingTotal` | `3` | Images the server may have in progress at once, from players, scripts and world load together, 0 for no limit. Over it the screen shows `[ImageGen] The image server is busy ...` instead of the prompt waiting in the image server; write the prompt again later. The sd-server draws one image at a time, so this keeps a script writing many prompts from pushing everyone else past `TimeoutSeconds`. Servers sharing one sd-server, like the nodes of a cluster, each have their own limit. |
 | `MaxCharacters` | `100000` | Longest art, the game's limit is 100000 |
 | `MinCellPixels` | `2.88` | Smallest character cell in texture pixels |
 | `Dither` | `true` | Floyd-Steinberg dithering |

@@ -34,6 +34,7 @@ public class PluginConfig : IPluginConfig
     private int steps = 8;
     private float cfgScale = 3f;
     private int maxPendingPerPlayer = 1;
+    private int maxPendingTotal = 3;
     private int maxCharacters = 100000;
     private float minCellPixels = 2.88f;
     private bool dither = true;
@@ -80,6 +81,12 @@ public class PluginConfig : IPluginConfig
     {
         get => maxPendingPerPlayer;
         set => SetValue(ref maxPendingPerPlayer, value);
+    }
+
+    public int MaxPendingTotal
+    {
+        get => maxPendingTotal;
+        set => SetValue(ref maxPendingTotal, value);
     }
 
     public int MaxCharacters

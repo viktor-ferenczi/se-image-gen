@@ -1,6 +1,7 @@
 // Programmable block script of the in-game rig, pasted with the test grid (rig.py).
 // Argument "<block name>|<surface index>|<text>" writes the text on that surface, like a
-// player would. "report <n>" echoes the state of every test surface and the blocks' CustomData.
+// player would. "*|<text>" writes "<text> <block name> <surface index>" on every test surface at once.
+// "report <n>" echoes the state of every test surface and the blocks' CustomData.
 
 readonly string[] names = { "PB", "LCD", "Wide LCD", "Seat" };
 
@@ -9,6 +10,18 @@ public void Main(string argument)
     if (argument.StartsWith("report"))
     {
         Report(argument);
+        return;
+    }
+
+    if (argument.StartsWith("*|"))
+    {
+        foreach (var name in names)
+        {
+            var screens = (IMyTextSurfaceProvider)Block(name);
+            for (var i = 0; i < screens.SurfaceCount; i++)
+                screens.GetSurface(i).WriteText($"{argument.Substring(2)} {name} {i}");
+        }
+        Echo("written all");
         return;
     }
 

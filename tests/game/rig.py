@@ -2,6 +2,7 @@
 
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py offline
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py ds
+    uv run --no-project --with httpx --with Pillow python tests/game/rig.py ds --cap
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py stop
 
 offline: a headless client with the client plugin loads a world offline, so the local game is
@@ -14,7 +15,9 @@ what they show. A stub sd-server (tests/stub_sd_server.py) answers with a test p
 STUB_SECONDS, or pass --sd-server URL to use a running sd-server with the real model.
 --no-custom-data instead turns WriteCustomData off and checks that the image is made and the
 block's own Custom Data stays as it was. It writes that config under the 1.0.0 name,
-LcdImageGen.cfg, so it also checks the move to ImageGen.cfg.
+LcdImageGen.cfg, so it also checks the move to ImageGen.cfg. --cap instead sets MaxPendingTotal
+to 3 and has the script write a prompt on all ten screens at once: three reach the image server,
+the rest show the busy line, and a player's chat prompt is refused while it is busy.
 Prints PASS/FAIL per check.
 
 Ports, the client id and folders come from the workspace's test slot claimed under TASK,
@@ -189,6 +192,8 @@ def register_sources(sources: Path, plugins) -> None:
 
 # --no-custom-data runs the check of WriteCustomData false instead of the full set
 WRITE_CUSTOM_DATA = True
+# The full set writes six prompts at once, --cap checks the limit with 3
+MAX_PENDING_TOTAL = 10
 
 
 def plugin_config(server_url: str) -> str:
@@ -201,6 +206,7 @@ def plugin_config(server_url: str) -> str:
   <Steps>8</Steps>
   <CfgScale>3</CfgScale>
   <MaxPendingPerPlayer>1</MaxPendingPerPlayer>
+  <MaxPendingTotal>{MAX_PENDING_TOTAL}</MaxPendingTotal>
   <MaxCharacters>100000</MaxCharacters>
   <MinCellPixels>2.88</MinCellPixels>
   <Dither>true</Dither>
@@ -863,6 +869,71 @@ def run_custom_data_off(c: Checks, remote: RemoteAPI, grid: int) -> None:
     )
 
 
+BUSY = "[ImageGen] The image server is busy"
+
+
+def run_cap(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
+    """A script writes a prompt on every screen at once with MaxPendingTotal 3"""
+    remote.batch(sets=[SetOp.run_pb(grid, PB, "*|/ig cap test")])
+    screens = wait_until(
+        lambda: len(s := {k: v for k, v in report(remote, grid).items() if k[1] != "data"}) == 10
+        and all(v["head"].startswith(("/ig cap test", BUSY)) or v["columns"] for v in s.values())
+        and sum(v["head"].startswith(BUSY) for v in s.values()) >= 7
+        and s,
+        30,
+        "the busy lines",
+        0.5,
+    )
+    busy = sorted(k for k, v in screens.items() if v["head"].startswith(BUSY))
+    accepted = sorted(k for k in screens if k not in busy)
+    c.check(
+        len(busy) == 7 and len(accepted) == MAX_PENDING_TOTAL,
+        "over MaxPendingTotal the screens show the busy line instead of queueing",
+        f"accepted {accepted}; busy {busy}: {screens[busy[0]]['head']!r}" if busy else repr(screens),
+    )
+    screenshot(remote, "cap-busy")
+
+    # A player's chat prompt while the server is busy
+    stand_before(remote, "LargeLCDPanel", 4)
+    replies = chat(remote, "/ig a busy test", "busy")
+    c.check(
+        any("The image server is busy with 3 image(s)" in r for r in replies),
+        "a player's chat prompt is refused while the server is busy",
+        repr(replies),
+    )
+
+    state = wait_until(
+        lambda: all((s := report(remote, grid)).get(k, {}).get("columns") for k in accepted) and s,
+        MAX_PENDING_TOTAL * STUB_SECONDS + 60,
+        "the accepted images",
+    )
+    stub = STUB_LOG.read_text(errors="replace")
+    in_flight = [int(n) for n in re.findall(r"in flight (\d+)", stub)]
+    c.check(
+        len(in_flight) == MAX_PENDING_TOTAL and max(in_flight) == MAX_PENDING_TOTAL,
+        "the image server got only as many requests as the limit",
+        f"{len(in_flight)} requests, most in flight at once {max(in_flight, default=0)}",
+    )
+    c.check(
+        all(state[k]["head"].startswith(BUSY) for k in busy),
+        "the busy screens kept the busy line",
+        repr([state[k]["head"] for k in busy]),
+    )
+
+    # Once the jobs are done a new prompt goes through
+    block, index = busy[0]
+    stand_before(remote, "LargeLCDPanelWide", 9)
+    write(remote, grid, block, index, "/ig after the rush")
+    state = wait_until(
+        lambda: (s := report(remote, grid)).get((block, index), {}).get("columns") and s,
+        IMAGES_TIMEOUT,
+        "the image after the rush",
+    )
+    c.check(True, f"a new prompt after the jobs finished makes an image on {block} screen {index}")
+    rejected = len(re.findall(r"Rejected: The image server is busy", game_log()))
+    c.check(rejected >= 7, "the server logged the rejections", f"{rejected} lines")
+
+
 def run(mode: str, sd_server: str | None) -> int:
     c = Checks()
     stop_all()
@@ -891,6 +962,9 @@ def run(mode: str, sd_server: str | None) -> int:
         if not WRITE_CUSTOM_DATA:
             run_custom_data_off(c, remote, grid)
             return c.summary()
+        if MAX_PENDING_TOTAL < 10:
+            run_cap(c, remote, grid, game_log)
+            return c.summary()
         run_checks(c, remote, grid, game_log)
         if mode == "ds":
             # The joined client has no plugin: the images came by the game's LCD sync
@@ -915,8 +989,12 @@ if __name__ == "__main__":
     parser.add_argument("mode", choices=["offline", "ds", "stop"])
     parser.add_argument("--sd-server", help="URL of a running sd-server instead of the stub")
     parser.add_argument("--no-custom-data", action="store_true", help="check WriteCustomData false only")
+    parser.add_argument("--cap", action="store_true", help="check MaxPendingTotal only")
     args = parser.parse_args()
     WRITE_CUSTOM_DATA = not args.no_custom_data
+    if args.cap:
+        # Slow images keep the server busy while the player's chat prompt is tried
+        MAX_PENDING_TOTAL, STUB_SECONDS = 3, 10.0
     if args.mode == "stop":
         stop_all()
     else:

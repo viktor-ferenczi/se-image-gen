@@ -330,3 +330,71 @@ public class ImageSizeTests
         Assert.Equal((width, height), ImageGenClient.ImageSize(columns, rows, 512 * 512));
     }
 }
+
+public class PendingJobsTests
+{
+    [Fact]
+    public void ScriptPromptsStopAtTheTotalLimit()
+    {
+        var pending = new PendingJobs();
+        var started = 0;
+        // A script writes a prompt on 20 screens, none of them by a player
+        for (var screen = 0; screen < 20; screen++)
+        {
+            if (pending.CheckLimits(0, 0, 1, 3) != null)
+                continue;
+            pending.Add((screen, 0), 0);
+            started++;
+        }
+
+        Assert.Equal(3, started);
+        Assert.Equal(3, pending.Count);
+        Assert.StartsWith("The image server is busy", pending.CheckLimits(0, 0, 1, 3));
+        Assert.StartsWith("The image server is busy", pending.CheckLimits(42, 0, 1, 3));
+
+        pending.Remove((0, 0), 0);
+        Assert.Null(pending.CheckLimits(42, 0, 1, 3));
+    }
+
+    [Fact]
+    public void PlayersCountInTheTotalAndTheirOwnLimit()
+    {
+        var pending = new PendingJobs();
+        pending.Add((1, 0), 42);
+        Assert.StartsWith("You have 1 image(s)", pending.CheckLimits(42, 0, 1, 3));
+        Assert.Null(pending.CheckLimits(7, 0, 1, 3));
+        // A prompt written by chat but not picked up yet counts against the player
+        Assert.StartsWith("You have 1 image(s)", pending.CheckLimits(7, 1, 1, 3));
+
+        pending.Add((2, 0), 7);
+        pending.Add((3, 1), 0);
+        Assert.StartsWith("The image server is busy with 3", pending.CheckLimits(8, 0, 1, 3));
+
+        pending.Remove((1, 0), 42);
+        Assert.Equal(0, pending.CountOf(42));
+        Assert.Equal(1, pending.CountOf(7));
+        Assert.Null(pending.CheckLimits(42, 0, 1, 3));
+    }
+
+    [Fact]
+    public void ZeroMeansNoLimit()
+    {
+        var pending = new PendingJobs();
+        for (var screen = 0; screen < 50; screen++)
+            pending.Add((screen, 0), 42);
+        Assert.Null(pending.CheckLimits(42, 0, 0, 0));
+    }
+
+    [Fact]
+    public void AddingAScreenTwiceCountsOnce()
+    {
+        var pending = new PendingJobs();
+        pending.Add((1, 0), 42);
+        pending.Add((1, 0), 42);
+        Assert.Equal(1, pending.Count);
+        Assert.Equal(1, pending.CountOf(42));
+        pending.Remove((1, 0), 42);
+        pending.Remove((1, 0), 42);
+        Assert.Equal(0, pending.Count);
+    }
+}

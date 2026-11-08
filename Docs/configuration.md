@@ -1,7 +1,9 @@
 # Configuration
 
-`LcdImageGen.cfg` in the game's user data folder (the Magnetar instance's data folder for the
-server, the game's AppData folder for the client), written with the defaults on first start:
+`ImageGen.cfg` in the game's user data folder (the Magnetar instance's data folder for the
+server, the game's AppData folder for the client), written with the defaults on first start.
+Version 1.0.0 called it `LcdImageGen.cfg`; the plugin renames that file on start, keeping its
+settings.
 
 | Option | Default | Meaning |
 |---|---|---|

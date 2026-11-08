@@ -1,4 +1,4 @@
-# LCD Image Generation
+# Image Generation
 
 Space Engineers 1 plugins that turn a prompt into an image on an LCD. Write `/ig <prompt>` on a
 screen, or look at it and send it in chat, for example `/ig a red fox in the snow`. The
@@ -14,7 +14,7 @@ resolution it can hold.
   game's normal LCD sync.
 - **Image server**: the model runs in an `sd-server` of
   [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) on any host with a
-  16 GB GPU. The plugins call its HTTP API at `ImageServerUrl` in `LcdImageGen.cfg`, for
+  16 GB GPU. The plugins call its HTTP API at `ImageServerUrl` in `ImageGen.cfg`, for
   example `http://192.168.1.20:1234`, so the game and the model can be on different machines. An image takes about 8 s on a Radeon AI PRO R9700.
 
 ## Writing a prompt
@@ -36,6 +36,6 @@ The chat command aimed at an LCD:
 
 - [Usage](Docs/usage.md): prompts on screens and in chat, `/ig` or `!ig`, Custom Data history
 - [Running the image model](Docs/image-server.md): host, build, weights, command line, systemd
-- [Configuration](Docs/configuration.md): `LcdImageGen.cfg` options
+- [Configuration](Docs/configuration.md): `ImageGen.cfg` options
 - [How it works](Docs/how-it-works.md): hooks, threading, image conversion, screen resolution
 - [Build and test](Docs/development.md): building, unit tests and the game test rig

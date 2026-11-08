@@ -23,7 +23,7 @@ namespace ClientPlugin;
 // ReSharper disable once UnusedType.Global
 public class Plugin : IPlugin, ICommonPlugin
 {
-    public const string Name = "LcdImageGen";
+    public const string Name = "ImageGen";
     public static Plugin Instance { get; private set; }
     public long Tick { get; private set; }
     private static bool failed;
@@ -50,6 +50,12 @@ public class Plugin : IPlugin, ICommonPlugin
         Log.Info("Loading");
 
         var configPath = Path.Combine(MyFileSystem.UserDataPath, ConfigFileName);
+
+        // Version 1.0.0 named the file LcdImageGen.cfg
+        var oldConfigPath = Path.Combine(MyFileSystem.UserDataPath, "LcdImageGen.cfg");
+        if (!File.Exists(configPath) && File.Exists(oldConfigPath))
+            File.Move(oldConfigPath, configPath);
+
         config = PersistentConfig<PluginConfig>.Load(Log, configPath);
 
         var gameVersion = MyFinalBuildConstants.APP_VERSION_STRING.ToString();

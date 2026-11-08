@@ -1,4 +1,4 @@
-"""In-game test of LcdImageGen: "/ig <prompt>" written on LCD surfaces turns into fitted images.
+"""In-game test of ImageGen: "/ig <prompt>" written on LCD surfaces turns into fitted images.
 
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py offline
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py ds
@@ -13,7 +13,8 @@ cockpit seat (six screens). The block's script writes the prompts on the screens
 what they show. A stub sd-server (tests/stub_sd_server.py) answers with a test pattern after
 STUB_SECONDS, or pass --sd-server URL to use a running sd-server with the real model.
 --no-custom-data instead turns WriteCustomData off and checks that the image is made and the
-block's own Custom Data stays as it was.
+block's own Custom Data stays as it was. It writes that config under the 1.0.0 name,
+LcdImageGen.cfg, so it also checks the move to ImageGen.cfg.
 Prints PASS/FAIL per check.
 
 Ports, the client id and folders come from the workspace's test slot claimed under TASK,
@@ -216,7 +217,7 @@ def plugin_config(server_url: str) -> str:
 
 
 def prepare_world(saves: Path, online_mode: str) -> Path:
-    world = saves / "LcdImageGenTest"
+    world = saves / "ImageGenTest"
     shutil.rmtree(world, ignore_errors=True)
     shutil.rmtree(saves / "RemoteAPITestSpace", ignore_errors=True)
     saves.mkdir(parents=True, exist_ok=True)
@@ -279,15 +280,15 @@ def blueprint_xml() -> str:
         '<PositionAndOrientation><Position x="0" y="0" z="0" /><Forward x="0" y="0" z="-1" />'
         '<Up x="0" y="1" z="0" /></PositionAndOrientation>'
         f"<GridSizeEnum>Large</GridSizeEnum><CubeBlocks>{''.join(blocks)}</CubeBlocks>"
-        "<IsStatic>true</IsStatic><DisplayName>LcdImageGen Test</DisplayName>"
+        "<IsStatic>true</IsStatic><DisplayName>ImageGen Test</DisplayName>"
         "<DestructibleBlocks>true</DestructibleBlocks><IsUnsupportedStation>true</IsUnsupportedStation></CubeGrid>"
     )
     return (
         '<?xml version="1.0"?>\n<Definitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" '
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><ShipBlueprints>'
         '<ShipBlueprint xsi:type="MyObjectBuilder_ShipBlueprintDefinition">'
-        '<Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="LcdImageGenTest" />'
-        f"<DisplayName>LcdImageGenTest</DisplayName><CubeGrids>{grid}</CubeGrids>"
+        '<Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="ImageGenTest" />'
+        f"<DisplayName>ImageGenTest</DisplayName><CubeGrids>{grid}</CubeGrids>"
         "</ShipBlueprint></ShipBlueprints></Definitions>"
     )
 
@@ -318,8 +319,8 @@ def prepare_server(server_url: str) -> None:
         "ServerPort": SERVER_PORT,
         "SteamPort": SLOT["DS_STEAM_PORT_BASE"],
         "Administrators": f"<unsignedLong>{CLIENT_ID}</unsignedLong>",
-        "ServerName": f"LcdImageGen Test {TASK}",
-        "WorldName": "LcdImageGenTest",
+        "ServerName": f"ImageGen Test {TASK}",
+        "WorldName": "ImageGenTest",
         "PauseGameWhenEmpty": "false",
         "IgnoreLastSession": "true",
         "RemoteApiEnabled": "false",
@@ -328,7 +329,7 @@ def prepare_server(server_url: str) -> None:
         text, count = re.subn(rf"<{tag}>.*?</{tag}>|<{tag} />", f"<{tag}>{value}</{tag}>", text, flags=re.S)
         assert count == 1, tag
     (SERVER_DATA / "SpaceEngineers-Dedicated.cfg").write_text(text, encoding="utf-8")
-    (SERVER_DATA / "LcdImageGen.cfg").write_text(plugin_config(server_url), encoding="utf-8")
+    (SERVER_DATA / "ImageGen.cfg").write_text(plugin_config(server_url), encoding="utf-8")
 
 
 def server_pid() -> int | None:
@@ -402,11 +403,13 @@ def prepare_client(with_plugin: bool, server_url: str) -> None:
         game_cfg.read_text(encoding="utf-8"),
     )
     game_cfg.write_text(text, encoding="utf-8")
-    config = APPDATA / "LcdImageGen.cfg"
+    config = APPDATA / "ImageGen.cfg"
+    old_config = APPDATA / "LcdImageGen.cfg"
+    config.unlink(missing_ok=True)
+    old_config.unlink(missing_ok=True)
     if with_plugin:
-        config.write_text(plugin_config(server_url), encoding="utf-8")
-    else:
-        config.unlink(missing_ok=True)
+        # The WriteCustomData check also covers moving the 1.0.0 config file to its new name
+        (config if WRITE_CUSTOM_DATA else old_config).write_text(plugin_config(server_url), encoding="utf-8")
 
 
 def client_pid() -> int | None:
@@ -743,7 +746,7 @@ def chat_replies(remote: RemoteAPI, before: dict) -> list[str]:
     return [
         h.get("text", "")
         for h in after.get("hud", [])
-        if h.get("sender") == "LcdImageGen" and (h.get("sender"), h.get("text"), h.get("timestamp")) not in seen
+        if h.get("sender") == "ImageGen" and (h.get("sender"), h.get("text"), h.get("timestamp")) not in seen
     ]
 
 
@@ -826,7 +829,7 @@ def paste_grid(remote: RemoteAPI) -> int:
     client the paste answers with another grid's id, so the grid is looked up by name"""
     remote.paste_blueprint(xml=blueprint_xml())
     grid = wait_until(
-        lambda: next((g["entityId"] for g in remote.list_grids() if g["name"] == "LcdImageGen Test"), None),
+        lambda: next((g["entityId"] for g in remote.list_grids() if g["name"] == "ImageGen Test"), None),
         60,
         "the pasted grid",
     )
@@ -853,6 +856,10 @@ def run_custom_data_off(c: Checks, remote: RemoteAPI, grid: int) -> None:
         state[("LCD", "data")][1] == other,
         "with WriteCustomData false the block's CustomData is left alone",
         repr(state[("LCD", "data")]),
+    )
+    c.check(
+        (APPDATA / "ImageGen.cfg").exists() and not (APPDATA / "LcdImageGen.cfg").exists(),
+        "the 1.0.0 LcdImageGen.cfg was moved to ImageGen.cfg and its settings used",
     )
 
 

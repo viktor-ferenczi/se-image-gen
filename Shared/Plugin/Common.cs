@@ -22,7 +22,7 @@ public static class Common
         Config = plugin.Config;
 
         GameVersion = gameVersion;
-        DataDir = Path.Combine(storageDir, "LcdImageGen");
+        DataDir = Path.Combine(storageDir, "ImageGen");
 
         PatchHelpers.Configure();
     }

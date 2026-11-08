@@ -11,7 +11,7 @@
   <RepoId>viktor-ferenczi/se-image-gen</RepoId>
 
   <!-- The name of your plugin that will appear in the plugin list -->
-  <FriendlyName>Image Generation (server)</FriendlyName>
+  <FriendlyName>Image Generation</FriendlyName>
 
   <!-- The author name that you want to appear in the plugin list -->
   <Author>Viktor</Author>

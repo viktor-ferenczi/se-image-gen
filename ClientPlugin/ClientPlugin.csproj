@@ -322,7 +322,7 @@
 
       <PluginDirectory Condition="'$(PulsarEdition)' != ''"
         >$(PulsarEditionDir)$(PathSeparator)Local$(PathSeparator)$(AssemblyName)</PluginDirectory>
-      <PluginDataFile>$(RepoRoot)$(AssemblyName)Client.xml</PluginDataFile>
+      <PluginDataFile>$(RepoRoot)ImageGenClient.xml</PluginDataFile>
     </PropertyGroup>
 
     <Warning

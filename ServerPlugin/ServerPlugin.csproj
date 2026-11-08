@@ -363,7 +363,7 @@
     <PropertyGroup>
       <PluginDirectory Condition="'$(MagnetarData)' != '' And Exists('$(MagnetarData)')"
         >$(MagnetarData)$(PathSeparator)Local</PluginDirectory>
-      <PluginDataFile>$(RepoRoot)$(AssemblyName)Server.xml</PluginDataFile>
+      <PluginDataFile>$(RepoRoot)ImageGenServer.xml</PluginDataFile>
     </PropertyGroup>
 
     <Message

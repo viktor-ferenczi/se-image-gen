@@ -11,7 +11,8 @@ resolution it can hold.
 - **Server plugin** (Magnetar): generates on a dedicated server.
 - **Client plugin** (Pulsar): generates where the local game is the server, offline and when
   hosting a friends game. Players who join need no plugin, they get the images through the
-  game's normal LCD sync.
+  game's normal LCD sync. On a server without the server plugin, it generates the prompts its
+  own player writes, and the other players see those images too.
 - **Image server**: the model runs in an `sd-server` of
   [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) on any host with a
   16 GB GPU. The plugins call its HTTP API at `ImageServerUrl` in `ImageGen.cfg`, for

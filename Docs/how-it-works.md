@@ -11,6 +11,18 @@
   `/` commands to the server like normal chat, so both prefixes reach it. Messages typed on the
   host or offline arrive through `MessageEnteredSender`, other players' through the
   multiplayer `ChatMessageReceived` event.
+- A client joined to a server asks whether the server runs Image Generation: it sends a mod
+  message, which the server plugin answers while it is enabled. If no answer comes within 10
+  s, the client does the work for its own player, and only for prompts that player writes:
+  in a screen's text editor (a prefix of the blocks' `SendChangeDescriptionMessage`) or by
+  chat. It waits until the server sends the text back, so the prompt has passed the server's
+  access check, then generates with its own `ImageServerUrl` and writes the image, font and
+  Custom Data through the same synced calls a player's edits use. The server keeps the text
+  and passes it on to the other players. Chat commands stay on the client then: they never
+  reach the server or the other players, and the replies are shown only locally. Where the
+  server has the plugin, the client leaves everything to it, so no prompt is generated twice.
+  A server with version 1.0.0 doesn't answer, so there both may generate a prompt; the image
+  that comes first stays, the other is dropped because the screen's text changed.
 - Single LCDs and every screen of a multi-screen block (cockpits, programmable blocks, button
   panels) work the same way, each with its own size and aspect ratio. The screen's index is
   its index in the block's surface list, the one the terminal and scripts use.

@@ -82,8 +82,7 @@ public static class ImageGenController
     > ChatWrites = new Dictionary<MyTextPanelComponent, (string, ulong)>();
     private static MyMultiplayerBase chatMultiplayer;
     private static readonly ConcurrentQueue<Job> Finished = new ConcurrentQueue<Job>();
-    private static readonly HashSet<(long, int)> Pending = new HashSet<(long, int)>();
-    private static readonly Dictionary<ulong, int> PendingPerPlayer = new Dictionary<ulong, int>();
+    private static readonly PendingJobs Pending = new PendingJobs();
     private static MySession session;
     private static bool moderationWarned;
 
@@ -120,7 +119,6 @@ public static class ImageGenController
             UnhookChat();
             session = MySession.Static;
             Pending.Clear();
-            PendingPerPlayer.Clear();
             ChatWrites.Clear();
             while (Triggers.TryDequeue(out _)) { }
             while (ChatCommands.TryDequeue(out _)) { }
@@ -210,21 +208,19 @@ public static class ImageGenController
             );
         }
 
-        var limit = Config.MaxPendingPerPlayer;
-        if (
-            trigger.Sender != 0
-            && limit > 0
-            && PendingPerPlayer.TryGetValue(trigger.Sender, out var count)
-            && count >= limit
-        )
+        // Over a limit the screen shows why instead of the job waiting in the image server
+        var rejection = Pending.CheckLimits(
+            trigger.Sender,
+            0,
+            Config.MaxPendingPerPlayer,
+            Config.MaxPendingTotal
+        );
+        if (rejection != null)
         {
             Log.Info(
-                $"Rejected: player {trigger.Sender} has {count} images pending; block {block.EntityId} screen {index}"
+                $"Rejected: {rejection} Player {trigger.Sender}, {Pending.Count} images pending; block {block.EntityId} screen {index}"
             );
-            ShowError(
-                surface,
-                $"You have {count} image(s) in progress already, try again when done."
-            );
+            ShowError(surface, rejection);
             return;
         }
 
@@ -252,9 +248,7 @@ public static class ImageGenController
             Timer = Stopwatch.StartNew(),
         };
 
-        Pending.Add(key);
-        PendingPerPlayer.TryGetValue(trigger.Sender, out count);
-        PendingPerPlayer[trigger.Sender] = count + 1;
+        Pending.Add(key, trigger.Sender);
 
         Log.Info(
             $"Generating: block {block.EntityId} \"{block.DisplayNameText}\" screen {index}, texture {surface.TextureSize.X:0}x{surface.TextureSize.Y:0}, surface {surface.SurfaceSize.X:0.#}x{surface.SurfaceSize.Y:0.#}, {fit}; prompt: {prompt}"
@@ -334,14 +328,7 @@ public static class ImageGenController
         if (job.Session != session)
             return;
 
-        Pending.Remove((job.EntityId, job.Index));
-        if (PendingPerPlayer.TryGetValue(job.Sender, out var count))
-        {
-            if (count <= 1)
-                PendingPerPlayer.Remove(job.Sender);
-            else
-                PendingPerPlayer[job.Sender] = count - 1;
-        }
+        Pending.Remove((job.EntityId, job.Index), job.Sender);
 
         var elapsed =
             $"{job.Timer.Elapsed.TotalSeconds:0.0} s, longest plugin update {maxUpdateMs:0.00} ms";
@@ -471,13 +458,18 @@ public static class ImageGenController
         }
 
         // Prompts written by chat but not picked up yet count too
-        var limit = Config.MaxPendingPerPlayer;
-        PendingPerPlayer.TryGetValue(command.SteamId, out var count);
+        var written = 0;
         foreach (var write in ChatWrites.Values)
-            count += write.SteamId == command.SteamId ? 1 : 0;
-        if (limit > 0 && count >= limit)
+            written += write.SteamId == command.SteamId ? 1 : 0;
+        var rejection = Pending.CheckLimits(
+            command.SteamId,
+            written,
+            Config.MaxPendingPerPlayer,
+            Config.MaxPendingTotal
+        );
+        if (rejection != null)
         {
-            Reply($"You have {count} image(s) in progress already, try again when done.");
+            Reply(rejection);
             return;
         }
 

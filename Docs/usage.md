@@ -20,7 +20,8 @@ the terminal and the Custom Data entries. Without a number it is screen 0: the s
 tell which screen of a cockpit is under the crosshair.
 
 The plugin answers in chat when it can't start: no screen in sight, no access to the block, no
-such screen, or the player already has an image in progress (`MaxPendingPerPlayer`).
+such screen, the player already has an image in progress (`MaxPendingPerPlayer`), or the
+server has as many images in progress as it allows (`MaxPendingTotal`).
 
 ### `/ig` or `!ig`
 

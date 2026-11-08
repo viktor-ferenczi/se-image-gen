@@ -26,6 +26,10 @@ public interface IPluginConfig : INotifyPropertyChanged
     // Prompts a player may have waiting at the same time, 0 for no limit
     int MaxPendingPerPlayer { get; set; }
 
+    // Images this server may have in progress at the same time, from players, scripts and world
+    // load together, 0 for no limit. Over it the screen shows that the image server is busy.
+    int MaxPendingTotal { get; set; }
+
     // Upper limit of the art's length (the game's limit is 100000 characters)
     int MaxCharacters { get; set; }
 

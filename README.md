@@ -28,15 +28,9 @@ resolution it can hold.
 Both chat prefixes do the same thing. `#<screen>` picks a screen of a block with several, such
 as a cockpit, counted from 0; without it the first screen is used.
 
-Prompts written on six screens:
-
-![Prompts on the screens before generation](Docs/screenshots/before-prompts.png)
-
-The chat command aimed at an LCD, and the plugin's answers:
+The chat command aimed at an LCD:
 
 ![Chat command](Docs/screenshots/chat-command.png)
-
-![Chat replies](Docs/screenshots/chat-replies.png)
 
 ## Documentation
 

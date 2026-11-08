@@ -37,6 +37,7 @@ public class PluginConfig : IPluginConfig
     private int maxCharacters = 100000;
     private float minCellPixels = 2.88f;
     private bool dither = true;
+    private bool writeCustomData = true;
     private ModerationConfig moderation = new ModerationConfig();
 
     public bool Enabled
@@ -97,6 +98,12 @@ public class PluginConfig : IPluginConfig
     {
         get => dither;
         set => SetValue(ref dither, value);
+    }
+
+    public bool WriteCustomData
+    {
+        get => writeCustomData;
+        set => SetValue(ref writeCustomData, value);
     }
 
     public ModerationConfig Moderation

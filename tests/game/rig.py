@@ -12,6 +12,8 @@ Both paste a station with a programmable block (two screens), a square LCD, a wi
 cockpit seat (six screens). The block's script writes the prompts on the screens and reports
 what they show. A stub sd-server (tests/stub_sd_server.py) answers with a test pattern after
 STUB_SECONDS, or pass --sd-server URL to use a running sd-server with the real model.
+--no-custom-data instead turns WriteCustomData off and checks that the image is made and the
+block's own Custom Data stays as it was.
 Prints PASS/FAIL per check.
 
 Ports, the client id and folders come from the workspace's test slot claimed under TASK,
@@ -184,6 +186,10 @@ def register_sources(sources: Path, plugins) -> None:
     tree.write(sources, encoding="utf-8", xml_declaration=True)
 
 
+# --no-custom-data runs the check of WriteCustomData false instead of the full set
+WRITE_CUSTOM_DATA = True
+
+
 def plugin_config(service_url: str) -> str:
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <PluginConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
@@ -197,6 +203,7 @@ def plugin_config(service_url: str) -> str:
   <MaxCharacters>100000</MaxCharacters>
   <MinCellPixels>2.88</MinCellPixels>
   <Dither>true</Dither>
+  <WriteCustomData>{str(WRITE_CUSTOM_DATA).lower()}</WriteCustomData>
   <Moderation>
     <Enabled>true</Enabled>
     <Prompt>Refuse anything not safe for work.</Prompt>
@@ -833,6 +840,22 @@ def paste_grid(remote: RemoteAPI) -> int:
     return grid
 
 
+def run_custom_data_off(c: Checks, remote: RemoteAPI, grid: int) -> None:
+    other = "Other script's data\n"
+    remote.batch(sets=[SetOp.custom_data(grid, LCD, other)])
+    wait_until(lambda: report(remote, grid)[("LCD", "data")][1] == other, 30, "the LCD's own CustomData")
+    write(remote, grid, "LCD", 0, "/ig a lighthouse in a storm")
+    state = wait_until(
+        lambda: (s := report(remote, grid)).get(("LCD", 0), {}).get("columns") and s, IMAGES_TIMEOUT, "the LCD image"
+    )
+    check_image(c, state, ("LCD", 0))
+    c.check(
+        state[("LCD", "data")][1] == other,
+        "with WriteCustomData false the block's CustomData is left alone",
+        repr(state[("LCD", "data")]),
+    )
+
+
 def run(mode: str, service: str | None) -> int:
     c = Checks()
     stop_all()
@@ -858,6 +881,9 @@ def run(mode: str, service: str | None) -> int:
         ensure_character(remote)
         grid = paste_grid(remote)
         print(f"pasted grid {grid}", flush=True)
+        if not WRITE_CUSTOM_DATA:
+            run_custom_data_off(c, remote, grid)
+            return c.summary()
         run_checks(c, remote, grid, game_log)
         if mode == "ds":
             # The joined client has no plugin: the images came by the game's LCD sync
@@ -881,7 +907,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("mode", choices=["offline", "ds", "stop"])
     parser.add_argument("--sd-server", help="URL of a running sd-server instead of the stub")
+    parser.add_argument("--no-custom-data", action="store_true", help="check WriteCustomData false only")
     args = parser.parse_args()
+    WRITE_CUSTOM_DATA = not args.no_custom_data
     if args.mode == "stop":
         stop_all()
     else:

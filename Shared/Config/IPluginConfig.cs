@@ -35,6 +35,10 @@ public interface IPluginConfig : INotifyPropertyChanged
     // Floyd-Steinberg dithering for smoother gradients with 512 colors
     bool Dither { get; set; }
 
+    // Keeps each screen's prompt in the block's Custom Data. Turn it off where scripts or mods
+    // keep their own data there.
+    bool WriteCustomData { get; set; }
+
     // Optional content moderation of the prompts, not implemented yet
     ModerationConfig Moderation { get; set; }
 }

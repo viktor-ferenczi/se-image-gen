@@ -15,6 +15,7 @@ server, the game's AppData folder for the client), written with the defaults on 
 | `MaxCharacters` | `100000` | Longest art, the game's limit is 100000 |
 | `MinCellPixels` | `2.88` | Smallest character cell in texture pixels |
 | `Dither` | `true` | Floyd-Steinberg dithering |
+| `WriteCustomData` | `true` | Keeps each screen's prompt in the block's Custom Data. Set it to `false` where scripts or mods keep their own data there; the plugin then leaves Custom Data alone |
 | `Moderation/Enabled` | `false` | Content moderation of the prompts, **not implemented yet**: does nothing, only logs a warning when enabled |
 | `Moderation/Prompt` | empty | Instructions for the moderating model, needed once moderation is implemented |
 

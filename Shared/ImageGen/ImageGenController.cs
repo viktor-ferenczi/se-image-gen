@@ -228,28 +228,8 @@ public static class ImageGenController
             return;
         }
 
-        if (
-            !PromptHistory.TryUpdate(
-                block.CustomData,
-                index,
-                prompt,
-                PromptHistory.MaxCustomDataLength,
-                out var customData
-            )
-        )
-        {
-            Log.Info(
-                $"Discarded: prompt does not fit into CustomData; block {block.EntityId} screen {index}"
-            );
-            ShowError(
-                surface,
-                $"Prompt discarded: it does not fit into the block's Custom Data ({PromptHistory.MaxCustomDataLength} characters)."
-            );
+        if (Config.WriteCustomData && !TryWritePrompt(block, surface, index, prompt))
             return;
-        }
-
-        if (customData != block.CustomData)
-            block.CustomData = customData;
 
         var fit = ScreenFit.Calculate(
             surface.TextureSize.X,
@@ -314,6 +294,39 @@ public static class ImageGenController
 
             Finished.Enqueue(job);
         });
+    }
+
+    // Keeps the prompt in the block's Custom Data, false if it doesn't fit
+    private static bool TryWritePrompt(
+        MyTerminalBlock block,
+        MyTextPanelComponent surface,
+        int index,
+        string prompt
+    )
+    {
+        if (
+            !PromptHistory.TryUpdate(
+                block.CustomData,
+                index,
+                prompt,
+                PromptHistory.MaxCustomDataLength,
+                out var customData
+            )
+        )
+        {
+            Log.Info(
+                $"Discarded: prompt does not fit into CustomData; block {block.EntityId} screen {index}"
+            );
+            ShowError(
+                surface,
+                $"Prompt discarded: it does not fit into the block's Custom Data ({PromptHistory.MaxCustomDataLength} characters)."
+            );
+            return false;
+        }
+
+        if (customData != block.CustomData)
+            block.CustomData = customData;
+        return true;
     }
 
     private static void Complete(Job job)

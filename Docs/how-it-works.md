@@ -19,6 +19,8 @@
   become spaces there. A screen's earlier entry is replaced in place. If the entry does not fit
   into the 64000 characters Custom Data allows, the prompt is discarded and nothing is
   generated.
+  With `WriteCustomData` set to `false` the plugin skips this step and never touches Custom
+  Data.
 - The HTTP call and the conversion to characters run on a worker thread. The game thread only
   starts a job and later applies the result, which takes well under a millisecond.
 - The plugin asks the image server for a picture at the screen's aspect ratio (about 512 x 512

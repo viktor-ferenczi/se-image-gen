@@ -8,13 +8,13 @@
   <Id>A8BA1F4C-E820-4809-92E6-484ED67E87D3</Id>
 
   <!-- GitHub repository ID -->
-  <RepoId>CometWorks/lcd-image-gen</RepoId>
+  <RepoId>viktor-ferenczi/se-image-gen</RepoId>
 
   <!-- The name of your plugin that will appear in the plugin list -->
   <FriendlyName>LCD Image Generation (server)</FriendlyName>
 
   <!-- The author name that you want to appear in the plugin list -->
-  <Author>CometWorks</Author>
+  <Author>Viktor</Author>
 
   <!-- Optional tooltip for the plugin in the plugin list -->
   <Tooltip>Write /ig &lt;prompt&gt; on an LCD to show a generated image there</Tooltip>

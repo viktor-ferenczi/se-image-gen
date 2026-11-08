@@ -14,6 +14,8 @@ prompts on six screens with the block's script and check the grids, fonts, Custo
 discard of an entry that does not fit, and that the game thread never waited. It follows the
 workspace's slot and RAM rules. Without `--sd-server URL` it starts `tests/stub_sd_server.py`,
 which answers like sd-server with a test pattern after 4 s, so no GPU is needed.
+`--no-custom-data` instead turns `WriteCustomData` off and checks that an image is made and the
+block's own Custom Data stays as it was.
 
 The plugins load from this folder as development folders: `LcdImageGenServer.xml` in Magnetar,
 `LcdImageGenClient.xml` in Pulsar.

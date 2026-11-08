@@ -87,9 +87,9 @@ CLIENT_ID = SLOT["CLIENT_ID_BASE"]
 CLIENT_NAME = "LcdTester"
 CLIENT_PID = APPDATA / "game.pid"
 CLIENT_LOG = APPDATA / "launch.log"
-SERVICE_PORT = SLOT["REMOTE_PORT_BASE"] + 9
-SERVICE_PID = TEST_ROOT / f"{TASK}-service.pid"
-SERVICE_LOG = TEST_ROOT / f"{TASK}-service.log"
+STUB_PORT = SLOT["REMOTE_PORT_BASE"] + 9
+STUB_PID = TEST_ROOT / f"{TASK}-sd-server.pid"
+STUB_LOG = TEST_ROOT / f"{TASK}-sd-server.log"
 ARTIFACTS = TEST_ROOT / f"{TASK}-artifacts"
 
 # --- processes -------------------------------------------------------------------
@@ -190,11 +190,11 @@ def register_sources(sources: Path, plugins) -> None:
 WRITE_CUSTOM_DATA = True
 
 
-def plugin_config(service_url: str) -> str:
+def plugin_config(server_url: str) -> str:
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <PluginConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Enabled>true</Enabled>
-  <ImageServerUrl>{service_url}</ImageServerUrl>
+  <ImageServerUrl>{server_url}</ImageServerUrl>
   <TimeoutSeconds>600</TimeoutSeconds>
   <ImagePixels>262144</ImagePixels>
   <Steps>8</Steps>
@@ -295,7 +295,7 @@ def blueprint_xml() -> str:
 # --- server and client ---------------------------------------------------------------
 
 
-def prepare_server(service_url: str) -> None:
+def prepare_server(server_url: str) -> None:
     if not (SERVER_CONFIG / "Sources").exists():
         SERVER_CONFIG.mkdir(parents=True, exist_ok=True)
         shutil.copytree(MAGNETAR / "Magnetar" / "Sources", SERVER_CONFIG / "Sources")
@@ -304,7 +304,7 @@ def prepare_server(service_url: str) -> None:
         SERVER_CONFIG / "Sources" / "sources.xml",
         [
             ("direct-transport", DIRECT_TRANSPORT_REPO, "DirectTransportServer.xml"),
-            ("lcd-image-gen", REPO, "LcdImageGenServer.xml"),
+            ("se-image-gen", REPO, "LcdImageGenServer.xml"),
         ],
     )
     (SERVER_CONFIG / "Profiles").mkdir(exist_ok=True)
@@ -328,7 +328,7 @@ def prepare_server(service_url: str) -> None:
         text, count = re.subn(rf"<{tag}>.*?</{tag}>|<{tag} />", f"<{tag}>{value}</{tag}>", text, flags=re.S)
         assert count == 1, tag
     (SERVER_DATA / "SpaceEngineers-Dedicated.cfg").write_text(text, encoding="utf-8")
-    (SERVER_DATA / "LcdImageGen.cfg").write_text(plugin_config(service_url), encoding="utf-8")
+    (SERVER_DATA / "LcdImageGen.cfg").write_text(plugin_config(server_url), encoding="utf-8")
 
 
 def server_pid() -> int | None:
@@ -362,7 +362,7 @@ def server_game_log() -> str:
     return logs[-1].read_text(errors="replace") if logs else ""
 
 
-def prepare_client(with_plugin: bool, service_url: str) -> None:
+def prepare_client(with_plugin: bool, server_url: str) -> None:
     if not LAUNCHER.exists():
         subprocess.run(
             [WORKSPACE / "testing/pulsar-dev-instances/new-pulsar-instance.sh", PULSAR, PULSAR_TEMPLATE],
@@ -376,7 +376,7 @@ def prepare_client(with_plugin: bool, service_url: str) -> None:
     ]
     ids = ["remote", "direct-transport"]
     if with_plugin:
-        plugins.append(("lcd-image-gen", REPO, "LcdImageGenClient.xml"))
+        plugins.append(("se-image-gen", REPO, "LcdImageGenClient.xml"))
         ids.append(CLIENT_PLUGIN_ID)
     register_sources(legacy / "Sources" / "sources.xml", plugins)
     (legacy / "Profiles" / "Current.xml").write_text(profile_xml(ids), encoding="utf-8")
@@ -404,7 +404,7 @@ def prepare_client(with_plugin: bool, service_url: str) -> None:
     game_cfg.write_text(text, encoding="utf-8")
     config = APPDATA / "LcdImageGen.cfg"
     if with_plugin:
-        config.write_text(plugin_config(service_url), encoding="utf-8")
+        config.write_text(plugin_config(server_url), encoding="utf-8")
     else:
         config.unlink(missing_ok=True)
 
@@ -483,23 +483,23 @@ def ensure_character(remote: RemoteAPI, timeout: float = 300.0) -> dict:
     return wait_until(alive, timeout, "a live character", 3)
 
 
-def start_service(stub: float) -> str:
-    _stop(SERVICE_PID, "stub_sd_server", 10)
+def start_stub(stub: float) -> str:
+    _stop(STUB_PID, "stub_sd_server", 10)
     _start(
         [
-            sys.executable, REPO / "tests/stub_sd_server.py", "--port", SERVICE_PORT,
+            sys.executable, REPO / "tests/stub_sd_server.py", "--port", STUB_PORT,
             "--seconds", stub, "--keep", ARTIFACTS / "images",
         ],
-        0, REPO, SERVICE_LOG, SERVICE_PID, guarded=False,
+        0, REPO, STUB_LOG, STUB_PID, guarded=False,
     )  # fmt: skip
-    wait_until(lambda: "listening" in SERVICE_LOG.read_text(errors="replace"), 30, "the stub sd-server")
-    return f"http://127.0.0.1:{SERVICE_PORT}"
+    wait_until(lambda: "listening" in STUB_LOG.read_text(errors="replace"), 30, "the stub sd-server")
+    return f"http://127.0.0.1:{STUB_PORT}"
 
 
 def stop_all() -> None:
     _stop(CLIENT_PID, str(LAUNCHER), 60)
     _stop(SERVER_PID, str(SERVER_CONFIG), 120)
-    _stop(SERVICE_PID, "stub_sd_server", 10)
+    _stop(STUB_PID, "stub_sd_server", 10)
 
 
 # --- checks -------------------------------------------------------------------------
@@ -683,7 +683,7 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     filler = "x" * 63990
     remote.batch(sets=[SetOp.custom_data(grid, WIDE, filler)])
     wait_until(lambda: report(remote, grid)[("Wide LCD", "data")][0] == len(filler), 30, "the filler CustomData")
-    requests_before = SERVICE_LOG.read_text(errors="replace").count(" generated ")
+    requests_before = STUB_LOG.read_text(errors="replace").count(" generated ")
     write(remote, grid, "Wide LCD", 0, "/ig a cat that does not fit")
     state = wait_until(
         lambda: "discarded" in (s := report(remote, grid)).get(("Wide LCD", 0), {}).get("head", "") and s,
@@ -693,7 +693,7 @@ def run_checks(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     time.sleep(STUB_SECONDS + 1)
     c.check(
         state[("Wide LCD", "data")][0] == len(filler)
-        and SERVICE_LOG.read_text(errors="replace").count(" generated ") == requests_before,
+        and STUB_LOG.read_text(errors="replace").count(" generated ") == requests_before,
         "an entry that does not fit is discarded and nothing is generated",
         f"screen: {state[('Wide LCD', 0)]['head']!r}, CustomData length {state[('Wide LCD', 'data')][0]}",
     )
@@ -856,13 +856,13 @@ def run_custom_data_off(c: Checks, remote: RemoteAPI, grid: int) -> None:
     )
 
 
-def run(mode: str, service: str | None) -> int:
+def run(mode: str, sd_server: str | None) -> int:
     c = Checks()
     stop_all()
     global IMAGES_TIMEOUT
-    if service:
+    if sd_server:
         IMAGES_TIMEOUT = 900
-    url = service or start_service(STUB_SECONDS)
+    url = sd_server or start_stub(STUB_SECONDS)
     try:
         if mode == "offline":
             prepare_client(True, url)

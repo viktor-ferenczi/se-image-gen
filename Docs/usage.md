@@ -8,7 +8,8 @@ so scripts can generate images too.
 
 The prompt stays on the screen while the image is generated, then the image replaces it. A
 failure replaces it with one line starting with `[LcdImageGen]`. The prompt is kept in the
-block's Custom Data as `Screen[<index>].Prompt: <prompt>`, so it can be copied back later.
+block's Custom Data as `Screen[<index>].Prompt: <prompt>`, so it can be copied back later,
+unless `WriteCustomData` is turned off.
 
 ## From chat
 

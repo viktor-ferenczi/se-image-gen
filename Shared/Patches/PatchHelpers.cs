@@ -4,6 +4,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using Shared.ImageGen;
 using Shared.Logging;
 using Shared.Plugin;
 using Shared.Tools;
@@ -72,5 +73,6 @@ public static class PatchHelpers
         // called on each game update (tick).
         // For example:
         //MyPatch.Update();
+        ImageGenController.Update();
     }
 }

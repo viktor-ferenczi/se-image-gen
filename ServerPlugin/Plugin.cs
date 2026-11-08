@@ -13,8 +13,8 @@ using VRage.Plugins;
 #if !LOCAL_BUILD
 using System.Reflection;
 
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("0.1.0.0")]
+[assembly: AssemblyFileVersion("0.1.0.0")]
 
 #endif
 
@@ -53,9 +53,6 @@ public class Plugin : IPlugin, ICommonPlugin
         var configPath = Path.Combine(MyFileSystem.UserDataPath, ConfigFileName);
         config = PersistentConfig<PluginConfig>.Load(Log, configPath);
 
-        // TODO: An option added later can default differently on a new deployment than on an existing one:
-        // if (config.IsNewDeployment) config.Data.NewOption = true;
-
         var gameVersion = MyFinalBuildConstants.APP_VERSION_STRING.ToString();
         Common.SetPlugin(this, gameVersion, MyFileSystem.UserDataPath);
 
@@ -72,7 +69,6 @@ public class Plugin : IPlugin, ICommonPlugin
     {
         try
         {
-            // TODO: Save state and close resources here, called when the game exists (not guaranteed!)
             // IMPORTANT: Do NOT call harmony.UnpatchAll() here! It may break other plugins.
         }
         catch (Exception ex)
@@ -107,7 +103,6 @@ public class Plugin : IPlugin, ICommonPlugin
 
     private void CustomUpdate()
     {
-        // TODO: Put your update code here. It is called on every simulation frame!
         PatchHelpers.PatchUpdates();
     }
 }

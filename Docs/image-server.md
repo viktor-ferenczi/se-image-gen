@@ -3,7 +3,7 @@
 The model runs in `sd-server` from stable-diffusion.cpp, which keeps it loaded and answers
 `POST /sdapi/v1/txt2img`. The plugin only needs its URL in `ImageServerUrl`, so the server can
 run on the game host or on any other machine the game host can reach. For the client plugin in an offline
-or friends game, run it on the same PC: the command below listens where the default
+or friends game, or on a server without the server plugin, run it on the same PC: the command below listens where the default
 `ImageServerUrl` points.
 
 ## Host

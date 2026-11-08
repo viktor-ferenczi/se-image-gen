@@ -3,11 +3,15 @@
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py offline
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py ds
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py ds --cap
+    uv run --no-project --with httpx --with Pillow python tests/game/rig.py client
     uv run --no-project --with httpx --with Pillow python tests/game/rig.py stop
 
 offline: a headless client with the client plugin loads a world offline, so the local game is
-the server. ds: an isolated Magnetar server with the server plugin and a headless client
-without it that joins; the client must see the images through the game's own LCD sync.
+the server. ds: an isolated Magnetar server with the server plugin and a headless client that
+joins with the client plugin; the server generates every image once, the client none, and the
+client sees them through the game's own LCD sync. client: the server runs without the plugin,
+so the client plugin generates the prompts its player writes in the LCD's text editor or by
+chat; a second client without the plugin must see the same images and never the chat command.
 
 Both paste a station with a programmable block (two screens), a square LCD, a wide LCD and a
 cockpit seat (six screens). The block's script writes the prompts on the screens and reports
@@ -37,6 +41,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -83,14 +88,51 @@ SERVER_DATA = SERVER_ROOT / "data"
 SERVER_PID = SERVER_ROOT / "server.pid"
 SERVER_LOG = SERVER_ROOT / "server.log"
 SERVER_PORT = SLOT["DS_SERVER_PORT_BASE"]
-PULSAR = TEST_ROOT / f"{TASK}-c0"
-LAUNCHER = PULSAR / "Interim.bin"
-APPDATA = TEST_ROOT / f"{TASK}-c0-data"
-CLIENT_PORT = SLOT["REMOTE_PORT_BASE"]
-CLIENT_ID = SLOT["CLIENT_ID_BASE"]
-CLIENT_NAME = "LcdTester"
-CLIENT_PID = APPDATA / "game.pid"
-CLIENT_LOG = APPDATA / "launch.log"
+
+
+@dataclass(frozen=True)
+class Client:
+    """Client i of the slot: its Pulsar folder, appdata, Remote port and id"""
+
+    index: int
+    name: str
+
+    @property
+    def pulsar(self) -> Path:
+        return TEST_ROOT / f"{TASK}-c{self.index}"
+
+    @property
+    def launcher(self) -> Path:
+        return self.pulsar / "Interim.bin"
+
+    @property
+    def appdata(self) -> Path:
+        return TEST_ROOT / f"{TASK}-c{self.index}-data"
+
+    @property
+    def port(self) -> int:
+        return SLOT["REMOTE_PORT_BASE"] + self.index
+
+    @property
+    def id(self) -> int:
+        return SLOT["CLIENT_ID_BASE"] + self.index
+
+    @property
+    def pid_file(self) -> Path:
+        return self.appdata / "game.pid"
+
+    @property
+    def log(self) -> Path:
+        return self.appdata / "launch.log"
+
+    def game_log(self) -> str:
+        path = self.appdata / "SpaceEngineers.log"
+        return path.read_text(errors="replace") if path.exists() else ""
+
+
+# The player who writes the prompts, and in client mode another player who only watches
+WRITER = Client(0, "LcdTester")
+WATCHER = Client(1, "LcdWatcher")
 STUB_PORT = SLOT["REMOTE_PORT_BASE"] + 9
 STUB_PID = TEST_ROOT / f"{TASK}-sd-server.pid"
 STUB_LOG = TEST_ROOT / f"{TASK}-sd-server.log"
@@ -302,7 +344,7 @@ def blueprint_xml() -> str:
 # --- server and client ---------------------------------------------------------------
 
 
-def prepare_server(server_url: str) -> None:
+def prepare_server(server_url: str, with_plugin: bool = True) -> None:
     if not (SERVER_CONFIG / "Sources").exists():
         SERVER_CONFIG.mkdir(parents=True, exist_ok=True)
         shutil.copytree(MAGNETAR / "Magnetar" / "Sources", SERVER_CONFIG / "Sources")
@@ -316,7 +358,7 @@ def prepare_server(server_url: str) -> None:
     )
     (SERVER_CONFIG / "Profiles").mkdir(exist_ok=True)
     (SERVER_CONFIG / "Profiles" / "Current.xml").write_text(
-        profile_xml(["direct-transport", SERVER_PLUGIN_ID]), encoding="utf-8"
+        profile_xml(["direct-transport", *([SERVER_PLUGIN_ID] if with_plugin else [])]), encoding="utf-8"
     )
     world = prepare_world(SERVER_DATA / "Saves", "PUBLIC")
     text = DS_CONFIG_TEMPLATE.read_text(encoding="utf-8")
@@ -324,7 +366,8 @@ def prepare_server(server_url: str) -> None:
         "IP": "127.0.0.1",
         "ServerPort": SERVER_PORT,
         "SteamPort": SLOT["DS_STEAM_PORT_BASE"],
-        "Administrators": f"<unsignedLong>{CLIENT_ID}</unsignedLong>",
+        # The watcher needs it to teleport
+        "Administrators": "".join(f"<unsignedLong>{c.id}</unsignedLong>" for c in (WRITER, WATCHER)),
         "ServerName": f"ImageGen Test {TASK}",
         "WorldName": "ImageGenTest",
         "PauseGameWhenEmpty": "false",
@@ -369,14 +412,14 @@ def server_game_log() -> str:
     return logs[-1].read_text(errors="replace") if logs else ""
 
 
-def prepare_client(with_plugin: bool, server_url: str) -> None:
-    if not LAUNCHER.exists():
+def prepare_client(c: Client, with_plugin: bool, server_url: str) -> None:
+    if not c.launcher.exists():
         subprocess.run(
-            [WORKSPACE / "testing/pulsar-dev-instances/new-pulsar-instance.sh", PULSAR, PULSAR_TEMPLATE],
+            [WORKSPACE / "testing/pulsar-dev-instances/new-pulsar-instance.sh", c.pulsar, PULSAR_TEMPLATE],
             check=True,
             stdout=subprocess.DEVNULL,
         )
-    legacy = PULSAR / "Legacy"
+    legacy = c.pulsar / "Legacy"
     plugins = [
         ("remote", REMOTE_REPO, "Remote.xml"),
         ("direct-transport", DIRECT_TRANSPORT_REPO, "DirectTransportClient.xml"),
@@ -388,19 +431,19 @@ def prepare_client(with_plugin: bool, server_url: str) -> None:
     register_sources(legacy / "Sources" / "sources.xml", plugins)
     (legacy / "Profiles" / "Current.xml").write_text(profile_xml(ids), encoding="utf-8")
 
-    APPDATA.mkdir(parents=True, exist_ok=True)
-    (APPDATA / "Remote.cfg").write_text(
+    c.appdata.mkdir(parents=True, exist_ok=True)
+    (c.appdata / "Remote.cfg").write_text(
         f"""<?xml version="1.0" encoding="utf-8"?>
 <PluginConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Enabled>true</Enabled>
   <ListenIP>127.0.0.1</ListenIP>
-  <ListenPort>{CLIENT_PORT}</ListenPort>
+  <ListenPort>{c.port}</ListenPort>
   <AdminPassword>SpaceEngineers</AdminPassword>
 </PluginConfig>
 """,
         encoding="utf-8",
     )
-    game_cfg = APPDATA / "SpaceEngineers.cfg"
+    game_cfg = c.appdata / "SpaceEngineers.cfg"
     if not game_cfg.exists():
         shutil.copy(HOME / ".config/SpaceEngineers/SpaceEngineers.cfg", game_cfg)
     text = re.sub(
@@ -409,8 +452,8 @@ def prepare_client(with_plugin: bool, server_url: str) -> None:
         game_cfg.read_text(encoding="utf-8"),
     )
     game_cfg.write_text(text, encoding="utf-8")
-    config = APPDATA / "ImageGen.cfg"
-    old_config = APPDATA / "LcdImageGen.cfg"
+    config = c.appdata / "ImageGen.cfg"
+    old_config = c.appdata / "LcdImageGen.cfg"
     config.unlink(missing_ok=True)
     old_config.unlink(missing_ok=True)
     if with_plugin:
@@ -418,32 +461,32 @@ def prepare_client(with_plugin: bool, server_url: str) -> None:
         (config if WRITE_CUSTOM_DATA else old_config).write_text(plugin_config(server_url), encoding="utf-8")
 
 
-def client_pid() -> int | None:
-    return _alive(CLIENT_PID, str(LAUNCHER))
+def client_pid(c: Client) -> int | None:
+    return _alive(c.pid_file, str(c.appdata))
 
 
-def api() -> RemoteAPI:
-    return RemoteAPI(f"http://127.0.0.1:{CLIENT_PORT}", username="admin", password="SpaceEngineers", timeout=90)
+def api(c: Client) -> RemoteAPI:
+    return RemoteAPI(f"http://127.0.0.1:{c.port}", username="admin", password="SpaceEngineers", timeout=90)
 
 
-def start_client(connect: bool, timeout: float = 900.0) -> RemoteAPI:
+def start_client(c: Client, connect: bool, timeout: float = 900.0) -> RemoteAPI:
     _start(
         [
-            LAUNCHER,
+            c.launcher,
             "-multiInstance", "-lazySteam", "-noprompt", "-noupdate", "-nosplash", "-stablelogs",
-            "-bin64", BIN64, "--no-steam", "--client-id", CLIENT_ID, "--client-name", CLIENT_NAME,
-            "-appdata", APPDATA, "--quality", "minimal", "--no-audio", "--headless", "--resolution", "1280x720",
+            "-bin64", BIN64, "--no-steam", "--client-id", c.id, "--client-name", c.name,
+            "-appdata", c.appdata, "--quality", "minimal", "--no-audio", "--headless", "--resolution", "1280x720",
             *(["--connect", f"127.0.0.1:{SERVER_PORT}"] if connect else []),
         ],
-        RENDER_GIB, PULSAR, CLIENT_LOG, CLIENT_PID,
+        RENDER_GIB, c.pulsar, c.log, c.pid_file,
     )  # fmt: skip
-    remote = api()
+    remote = api(c)
 
     def listening():
-        if not client_pid():
+        if not client_pid(c):
             time.sleep(1)
-            if not client_pid():
-                raise RuntimeError(f"The client exited, see {CLIENT_LOG}")
+            if not client_pid(c):
+                raise RuntimeError(f"The client exited, see {c.log}")
         try:
             remote.ping()
             return True
@@ -506,7 +549,8 @@ def start_stub(stub: float) -> str:
 
 
 def stop_all() -> None:
-    _stop(CLIENT_PID, str(LAUNCHER), 60)
+    for c in (WRITER, WATCHER):
+        _stop(c.pid_file, str(c.appdata), 60)
     _stop(SERVER_PID, str(SERVER_CONFIG), 120)
     _stop(STUB_PID, "stub_sd_server", 10)
 
@@ -864,7 +908,7 @@ def run_custom_data_off(c: Checks, remote: RemoteAPI, grid: int) -> None:
         repr(state[("LCD", "data")]),
     )
     c.check(
-        (APPDATA / "ImageGen.cfg").exists() and not (APPDATA / "LcdImageGen.cfg").exists(),
+        (WRITER.appdata / "ImageGen.cfg").exists() and not (WRITER.appdata / "LcdImageGen.cfg").exists(),
         "the 1.0.0 LcdImageGen.cfg was moved to ImageGen.cfg and its settings used",
     )
 
@@ -934,6 +978,161 @@ def run_cap(c: Checks, remote: RemoteAPI, grid: int, game_log) -> None:
     c.check(rejected >= 7, "the server logged the rejections", f"{rejected} lines")
 
 
+def generated() -> int:
+    """Images the stub sd-server made so far"""
+    return STUB_LOG.read_text(errors="replace").count(" generated ")
+
+
+def wait_log(c: Client, text: str, timeout: float = 60) -> bool:
+    try:
+        return wait_until(lambda: text in c.game_log(), timeout, f"{text!r} in {c.name}'s log")
+    except TimeoutError:
+        return False
+
+
+def edit_text(remote: RemoteAPI, subtype: str, text: str) -> None:
+    """Writes the text in a text panel's editor like a player: Use on the screen opens it"""
+    stand_before(remote, subtype, 3)
+
+    def editor():
+        return next((s for s in remote.list_screens() if s.get("type") == "MyGuiScreenTextPanel"), None)
+
+    # The server opens the editor; a Use it misses is sent again
+    for _ in range(3):
+        remote.character_use()
+        try:
+            screen = wait_until(editor, 10, "the text editor", 0.5)["index"]
+            break
+        except TimeoutError:
+            pass
+    else:
+        raise TimeoutError(f"No text editor, target {remote.get_character_target()}, screens {remote.list_screens()}")
+
+    # The OK button has the focus, a click moves it to the text
+    name = "MyGuiControlMultilineEditableText"
+    box = remote.control_hover(name=name, screen=screen)["pixel"]
+    remote.click(box["x"], box["y"])
+    remote.type_text(text)
+
+    def typed():
+        controls = remote.get_controls(screen)
+        return any(c["type"] == name and c.get("properties", {}).get("text") == text for c in controls)
+
+    wait_until(typed, 15, "the typed text", 0.3)
+    remote.control_click(text="OK", screen=screen)
+
+
+def wait_image(remote: RemoteAPI, grid: int, key, prompt: str) -> dict:
+    """The script's report once the screen shows an image and has the prompt in CustomData"""
+    try:
+        return wait_until(
+            lambda: (s := report(remote, grid)).get(key, {}).get("columns") and history_entry(s, *key) == prompt and s,
+            IMAGES_TIMEOUT,
+            f"the image on {key[0]} screen {key[1]}",
+            2,
+        )
+    except TimeoutError:
+        return report(remote, grid)
+
+
+def check_watcher(c: Checks, watcher: RemoteAPI, grid: int, state: dict, key, cell, subtype: str) -> None:
+    """The other player's client draws the same image. Its sprites update only while it renders
+    the screen, so it looks at it first"""
+    want = state.get(key, {})
+    stand_before(watcher, subtype, 4)
+
+    def texts():
+        surface = watcher.get_surface(grid, cell, key[1])
+        return [s.get("data") or "" for s in surface.get("sprites", []) if s.get("type") == "TEXT"]
+
+    def drawn(found):
+        return any(len(t) == want.get("length") and samples(t) == want.get("samples") for t in found)
+
+    try:
+        found = wait_until(lambda: (t := texts()) and drawn(t) and t, 30, f"the watcher's {key[0]} screen {key[1]}", 1)
+    except TimeoutError:
+        found = texts()
+    c.check(
+        drawn(found),
+        f"the other player sees the image on {key[0]} screen {key[1]}",
+        f"text sprite lengths {[len(t) for t in found]}, server {want.get('length')}",
+    )
+
+
+def check_client_mode(c: Checks, writer: RemoteAPI, watcher: RemoteAPI, grid: int) -> None:
+    """The server has no Image Generation: the writer's client generates what its player writes"""
+    c.check(
+        wait_log(WRITER, "The server does not run Image Generation"),
+        "the client finds that the server does not run Image Generation",
+    )
+    before = generated()
+
+    # A prompt typed in the LCD's text editor
+    edit_text(writer, "LargeLCDPanel", "/ig a red fox in the snow")
+    state = wait_image(writer, grid, ("LCD", 0), "a red fox in the snow")
+    check_image(c, state, ("LCD", 0))
+    c.check(
+        history_entry(state, "LCD", 0) == "a red fox in the snow",
+        "the server has the edited LCD's prompt in its CustomData",
+        repr(state.get(("LCD", "data"))),
+    )
+    check_watcher(c, watcher, grid, state, ("LCD", 0), LCD, "LargeLCDPanel")
+    screenshot(writer, "client-lcd-edit")
+
+    # A chat command aimed at the second screen of the programmable block
+    watcher_chat = watcher.get_chat_messages().get("latest", 0)
+    stand_before(writer, "LargeProgrammableBlock", 4)
+    replies = chat(writer, "/ig #1 a tiny robot", "Generating")
+    c.check(
+        any("Generating an image on PB screen #1" in r for r in replies),
+        "chat /ig #1 is handled by the client",
+        repr(replies),
+    )
+    state = wait_image(writer, grid, ("PB", 1), "a tiny robot")
+    check_image(c, state, ("PB", 1))
+    check_watcher(c, watcher, grid, state, ("PB", 1), PB, "LargeProgrammableBlock")
+    seen = [m.get("Text", "") for m in watcher.get_chat_messages(after=watcher_chat).get("messages", [])]
+    c.check(not any("ig" in t for t in seen), "the other player never gets the chat command", repr(seen))
+
+    # Looking at nothing, the reply comes from the client too
+    here = writer.get_character()["position"]
+    writer.character_look_at(here[0], here[1] + 100, here[2], tolerance=2)
+    replies = chat(writer, "/ig nothing to see", "Look at a screen")
+    c.check(any("Look at a screen" in r for r in replies), "chat /ig without a screen gets a reply", repr(replies))
+
+    # A prompt the writer's player didn't write, here the server side script's, is not the client's
+    stand_before(writer, "LargeLCDPanelWide", 9)
+    write(writer, grid, "Wide LCD", 0, "/ig a prompt of another player")
+    time.sleep(STUB_SECONDS + 3)
+    head = report(writer, grid).get(("Wide LCD", 0), {}).get("head")
+    c.check(head == "/ig a prompt of another player", "a prompt written by someone else is left alone", repr(head))
+    c.check(generated() - before == 2, "each prompt was generated once", f"{generated() - before} images for 2 prompts")
+
+
+def check_server_edit(c: Checks, writer: RemoteAPI, grid: int) -> None:
+    """Both have Image Generation: a prompt typed in the LCD's text editor is the server's job.
+    First thing after the paste: after the other checks the editor didn't open (cause unknown)"""
+    c.check(
+        wait_log(WRITER, "The server runs Image Generation 1.1.0"),
+        "the client finds that the server runs Image Generation",
+    )
+    edit_text(writer, "LargeLCDPanel", "/ig a lighthouse in a storm")
+    state = wait_image(writer, grid, ("LCD", 0), "a lighthouse in a storm")
+    check_image(c, state, ("LCD", 0))
+    stand_before(writer, "LargeLCDPanelWide", 9)
+
+
+def check_server_wins(c: Checks, before: int) -> None:
+    """The server made every image once, the client none"""
+    time.sleep(STUB_SECONDS)
+    server = len(re.findall(r"Generating: ", server_game_log()))
+    c.check(
+        generated() - before == server and "Generating: " not in WRITER.game_log(),
+        "the server generated every image once and the client none",
+        f"{generated() - before} images made, {server} by the server",
+    )
+
+
 def run(mode: str, sd_server: str | None) -> int:
     c = Checks()
     stop_all()
@@ -942,32 +1141,42 @@ def run(mode: str, sd_server: str | None) -> int:
         IMAGES_TIMEOUT = 900
     url = sd_server or start_stub(STUB_SECONDS)
     try:
+        before = generated()
         if mode == "offline":
-            prepare_client(True, url)
-            remote = start_client(connect=False)
-            world = prepare_world(APPDATA / "Saves" / str(CLIENT_ID), "OFFLINE")
+            prepare_client(WRITER, True, url)
+            remote = start_client(WRITER, connect=False)
+            world = prepare_world(WRITER.appdata / "Saves" / str(WRITER.id), "OFFLINE")
             remote.load(str(world))
             wait_world(remote)
-            game_log = lambda: (APPDATA / "SpaceEngineers.log").read_text(errors="replace")  # noqa: E731
+            game_log = WRITER.game_log
         else:
-            prepare_server(url)
+            prepare_server(url, with_plugin=mode == "ds")
             start_server()
-            prepare_client(False, url)
-            remote = start_client(connect=True)
+            prepare_client(WRITER, True, url)
+            remote = start_client(WRITER, connect=True)
             wait_world(remote)
             game_log = server_game_log
         ensure_character(remote)
         grid = paste_grid(remote)
         print(f"pasted grid {grid}", flush=True)
+        if mode == "client":
+            prepare_client(WATCHER, False, url)
+            watcher = start_client(WATCHER, connect=True)
+            wait_world(watcher)
+            ensure_character(watcher)
+            check_client_mode(c, remote, watcher, grid)
+            return c.summary()
         if not WRITE_CUSTOM_DATA:
             run_custom_data_off(c, remote, grid)
             return c.summary()
         if MAX_PENDING_TOTAL < 10:
             run_cap(c, remote, grid, game_log)
             return c.summary()
+        if mode == "ds":
+            check_server_edit(c, remote, grid)
         run_checks(c, remote, grid, game_log)
         if mode == "ds":
-            # The joined client has no plugin: the images came by the game's LCD sync
+            # The images came to the client by the game's LCD sync
             state = report(remote, grid)
             for key, cell in ((("LCD", 0), LCD), (("PB", 0), PB)):
                 surface = remote.get_surface(grid, cell, key[1])
@@ -977,6 +1186,7 @@ def run(mode: str, sd_server: str | None) -> int:
                     f"the joined client draws the server's image on {key[0]} screen {key[1]}",
                     f"{len(texts)} text sprites, lengths {[len(t) for t in texts]}, server {state[key]['length']}",
                 )
+            check_server_wins(c, before)
         screenshot(remote, f"{mode}-screens")
     finally:
         if not os.environ.get("LCD_KEEP"):
@@ -986,7 +1196,7 @@ def run(mode: str, sd_server: str | None) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=["offline", "ds", "stop"])
+    parser.add_argument("mode", choices=["offline", "ds", "client", "stop"])
     parser.add_argument("--sd-server", help="URL of a running sd-server instead of the stub")
     parser.add_argument("--no-custom-data", action="store_true", help="check WriteCustomData false only")
     parser.add_argument("--cap", action="store_true", help="check MaxPendingTotal only")

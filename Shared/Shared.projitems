@@ -20,11 +20,13 @@
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\PromptHistory.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\RgbImage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ImageGen\ScreenFit.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ImageGen\ServerProbe.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Logging\IPluginLogger.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Logging\LogFormatter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Logging\PluginLogger.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Patches\MyTextPanelComponentPatch.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Patches\PatchHelpers.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Patches\TextEditPatch.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Plugin\Common.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Plugin\ICommonPlugin.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Tools\CodeChange.cs" />

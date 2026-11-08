@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Threading.Tasks;
 using HarmonyLib;
 using Sandbox.Engine.Multiplayer;
@@ -27,8 +28,10 @@ using IngameSurfaceProvider = Sandbox.ModAPI.Ingame.IMyTextSurfaceProvider;
 
 namespace Shared.ImageGen;
 
-// Turns "/ig <prompt>" written on an LCD surface into an image on that surface. Runs only where the
-// local game is the server: on the dedicated server, in offline games and on the host of a friends game.
+// Turns "/ig <prompt>" written on an LCD surface into an image on that surface. Runs where the local
+// game is the server: on the dedicated server, in offline games and on the host of a friends game.
+// A client whose server doesn't run Image Generation does it for its own player: it generates the
+// prompts that player writes and writes the image the way a player's edit does, so the game syncs it.
 // Everything here runs on the game thread, except the HTTP call and the conversion to characters.
 public static class ImageGenController
 {
@@ -75,11 +78,12 @@ public static class ImageGenController
     private static readonly ConcurrentQueue<ChatCommand> ChatCommands =
         new ConcurrentQueue<ChatCommand>();
 
-    // Prompts written on a screen by a chat command, so the job counts against that player
+    // Prompts written on a screen by a chat command, so the job counts against that player. On a
+    // client also the local player's edits: a client acts only on these when the server sends them back
     private static readonly Dictionary<
         MyTextPanelComponent,
         (string Text, ulong SteamId)
-    > ChatWrites = new Dictionary<MyTextPanelComponent, (string, ulong)>();
+    > ExpectedWrites = new Dictionary<MyTextPanelComponent, (string, ulong)>();
     private static MyMultiplayerBase chatMultiplayer;
     private static readonly ConcurrentQueue<Job> Finished = new ConcurrentQueue<Job>();
     private static readonly PendingJobs Pending = new PendingJobs();
@@ -96,12 +100,19 @@ public static class ImageGenController
         if (
             !Config.Enabled
             || !text.StartsWith(PromptHistory.Prefix, StringComparison.OrdinalIgnoreCase)
-            || !Sync.IsServer
         )
             return;
 
-        var context = MyEventContext.Current;
-        var sender = context.IsValid && !context.IsLocallyInvoked ? context.Sender.Value : 0ul;
+        ulong sender;
+        if (Sync.IsServer)
+        {
+            var context = MyEventContext.Current;
+            sender = context.IsValid && !context.IsLocallyInvoked ? context.Sender.Value : 0ul;
+        }
+        else if (ExpectedWrites.TryGetValue(surface, out var write) && write.Text == text)
+            sender = write.SteamId;
+        else
+            return;
         Triggers.Enqueue(
             new Trigger
             {
@@ -112,22 +123,64 @@ public static class ImageGenController
         );
     }
 
+    // Text the local player wrote on a screen, on a client before it goes to the server
+    public static void OnLocalEdit(MyTextPanelComponent surface, StringBuilder description)
+    {
+        if (
+            surface == null
+            || Sync.IsServer
+            || ServerProbe.ServerHasPlugin == true
+            || !Config.Enabled
+        )
+            return;
+
+        // An unchanged text is not sent, nor generated again
+        var text = description.ToString();
+        if (
+            text != surface.Text
+            && text.StartsWith(PromptHistory.Prefix, StringComparison.OrdinalIgnoreCase)
+        )
+            ExpectedWrites[surface] = (text, Sync.MyId);
+    }
+
     public static void Update()
     {
         if (MySession.Static != session)
         {
             UnhookChat();
+            ServerProbe.Stop();
             session = MySession.Static;
             Pending.Clear();
-            ChatWrites.Clear();
+            ExpectedWrites.Clear();
             while (Triggers.TryDequeue(out _)) { }
             while (ChatCommands.TryDequeue(out _)) { }
-            if (session != null && Sync.IsServer)
+            if (session != null)
+            {
+                ServerProbe.Start();
                 HookChat();
+            }
         }
 
-        if (session == null || !Sync.IsServer)
+        if (session == null)
             return;
+
+        if (!Sync.IsServer)
+        {
+            ServerProbe.Update();
+
+            // The prompts wait for the server's answer
+            if (ServerProbe.ServerHasPlugin == null)
+                return;
+
+            // The server does the work
+            if (ServerProbe.ServerHasPlugin == true)
+            {
+                ExpectedWrites.Clear();
+                while (Triggers.TryDequeue(out _)) { }
+                while (ChatCommands.TryDequeue(out _)) { }
+                return;
+            }
+        }
 
         if (Triggers.IsEmpty && Finished.IsEmpty && ChatCommands.IsEmpty && Pending.Count == 0)
             return;
@@ -188,11 +241,11 @@ public static class ImageGenController
         if (Pending.Contains(key))
             return;
 
-        if (ChatWrites.TryGetValue(surface, out var chatWrite))
+        if (ExpectedWrites.TryGetValue(surface, out var expected))
         {
-            ChatWrites.Remove(surface);
-            if (trigger.Sender == 0 && chatWrite.Text == trigger.Text)
-                trigger.Sender = chatWrite.SteamId;
+            ExpectedWrites.Remove(surface);
+            if (trigger.Sender == 0 && expected.Text == trigger.Text)
+                trigger.Sender = expected.SteamId;
         }
 
         var prompt = PromptHistory.ParsePrompt(trigger.Text);
@@ -387,6 +440,8 @@ public static class ImageGenController
         MyAPIGateway.Utilities.MessageEnteredSender += OnLocalChat;
 
         // Messages of other players: on a dedicated server and on the host
+        if (!Sync.IsServer)
+            return;
         chatMultiplayer = MyMultiplayer.Static;
         if (chatMultiplayer != null)
             chatMultiplayer.ChatMessageReceived += OnRemoteChat;
@@ -404,8 +459,27 @@ public static class ImageGenController
 
     private static void OnLocalChat(ulong sender, string message, ref bool sendToOthers)
     {
-        if (Config.Enabled && PromptHistory.TryParseChatCommand(message, out _, out _))
-            ChatCommands.Enqueue(new ChatCommand { SteamId = sender, Message = message });
+        if (!Config.Enabled || !PromptHistory.TryParseChatCommand(message, out _, out _))
+            return;
+
+        if (!Sync.IsServer)
+        {
+            // The server's plugin takes it from the chat
+            if (ServerProbe.ServerHasPlugin == true)
+                return;
+
+            // Never shown to the other players
+            sendToOthers = false;
+            if (ServerProbe.ServerHasPlugin == null)
+            {
+                ShowLocalChat(
+                    "Checking whether the server runs Image Generation, try again in a few seconds."
+                );
+                return;
+            }
+        }
+
+        ChatCommands.Enqueue(new ChatCommand { SteamId = sender, Message = message });
     }
 
     private static void OnRemoteChat(
@@ -434,8 +508,13 @@ public static class ImageGenController
             return;
 
         var identityId = player.Identity.IdentityId;
-        void Reply(string text) =>
-            MyVisualScriptLogicProvider.SendChatMessage(text, ChatAuthor, identityId, "Red");
+        void Reply(string text)
+        {
+            if (Sync.IsServer)
+                MyVisualScriptLogicProvider.SendChatMessage(text, ChatAuthor, identityId, "Red");
+            else
+                ShowLocalChat(text);
+        }
 
         var block = FindTargetedBlock(player.Character);
         if (!(block is IngameSurfaceProvider provider) || provider.SurfaceCount == 0)
@@ -459,7 +538,7 @@ public static class ImageGenController
 
         // Prompts written by chat but not picked up yet count too
         var written = 0;
-        foreach (var write in ChatWrites.Values)
+        foreach (var write in ExpectedWrites.Values)
             written += write.SteamId == command.SteamId ? 1 : 0;
         var rejection = Pending.CheckLimits(
             command.SteamId,
@@ -475,7 +554,7 @@ public static class ImageGenController
 
         var surface = (MyTextPanelComponent)provider.GetSurface(index);
         var text = PromptHistory.Prefix + prompt;
-        ChatWrites[surface] = (text, command.SteamId);
+        ExpectedWrites[surface] = (text, command.SteamId);
         if (surface.Text == text)
             Triggers.Enqueue(
                 new Trigger
@@ -493,6 +572,10 @@ public static class ImageGenController
         );
         Reply($"Generating an image on {block.DisplayNameText} screen #{index}.");
     }
+
+    // A reply only the local player sees
+    private static void ShowLocalChat(string text) =>
+        MyHud.Chat.multiplayer_ScriptedChatMessageReceived(text, ChatAuthor, "Red", Color.White);
 
     // The terminal block under the character's crosshair, if within reach
     private static MyTerminalBlock FindTargetedBlock(

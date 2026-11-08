@@ -17,5 +17,5 @@ which answers like sd-server with a test pattern after 4 s, so no GPU is needed.
 `--no-custom-data` instead turns `WriteCustomData` off and checks that an image is made and the
 block's own Custom Data stays as it was.
 
-The plugins load from this folder as development folders: `LcdImageGenServer.xml` in Magnetar,
-`LcdImageGenClient.xml` in Pulsar.
+The plugins load from this folder as development folders: `ImageGenServer.xml` in Magnetar,
+`ImageGenClient.xml` in Pulsar.

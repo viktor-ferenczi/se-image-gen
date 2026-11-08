@@ -304,7 +304,7 @@ def prepare_server(server_url: str) -> None:
         SERVER_CONFIG / "Sources" / "sources.xml",
         [
             ("direct-transport", DIRECT_TRANSPORT_REPO, "DirectTransportServer.xml"),
-            ("se-image-gen", REPO, "LcdImageGenServer.xml"),
+            ("se-image-gen", REPO, "ImageGenServer.xml"),
         ],
     )
     (SERVER_CONFIG / "Profiles").mkdir(exist_ok=True)
@@ -376,7 +376,7 @@ def prepare_client(with_plugin: bool, server_url: str) -> None:
     ]
     ids = ["remote", "direct-transport"]
     if with_plugin:
-        plugins.append(("se-image-gen", REPO, "LcdImageGenClient.xml"))
+        plugins.append(("se-image-gen", REPO, "ImageGenClient.xml"))
         ids.append(CLIENT_PLUGIN_ID)
     register_sources(legacy / "Sources" / "sources.xml", plugins)
     (legacy / "Profiles" / "Current.xml").write_text(profile_xml(ids), encoding="utf-8")

@@ -12,8 +12,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 		AGENTS.md = AGENTS.md
 		Directory.Build.props = Directory.Build.props
-		LcdImageGenClient.xml = LcdImageGenClient.xml
-		LcdImageGenServer.xml = LcdImageGenServer.xml
+		ImageGenClient.xml = ImageGenClient.xml
+		ImageGenServer.xml = ImageGenServer.xml
 		LICENSE = LICENSE
 		Version.Build.props = Version.Build.props
 	EndProjectSection

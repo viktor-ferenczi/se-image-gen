@@ -49,7 +49,7 @@ HOME = Path.home()
 REPO = Path(__file__).resolve().parents[2]
 WORKSPACE = Path(os.environ.get("SE_WORKSPACE", HOME / "ws/se"))
 PARALLEL = WORKSPACE / "testing" / "parallel-test-work"
-REMOTE_REPO = WORKSPACE / "se1/plugins/remote"
+REMOTE_REPO = Path(os.environ.get("SE_REMOTE_REPO", WORKSPACE / "se1/plugins/remote"))
 DIRECT_TRANSPORT_REPO = WORKSPACE / "se1/direct-transport"
 MAGNETAR = HOME / ".config/Magnetar"
 PULSAR_TEMPLATE = HOME / ".config/Pulsar"
@@ -425,6 +425,11 @@ def prepare_client(c: Client, with_plugin: bool, server_url: str) -> None:
         ("direct-transport", DIRECT_TRANSPORT_REPO, "DirectTransportClient.xml"),
     ]
     ids = ["remote", "direct-transport"]
+    # Extra client dev folders, name|folder|manifest entries separated by ";"
+    for entry in filter(None, os.environ.get("CLIENT_DEV_FOLDERS", "").split(";")):
+        name, folder, file = entry.split("|")
+        plugins.append((name, Path(folder), file))
+        ids.append(name)
     if with_plugin:
         plugins.append(("se-image-gen", REPO, "ImageGenClient.xml"))
         ids.append(CLIENT_PLUGIN_ID)

@@ -49,7 +49,7 @@ HOME = Path.home()
 REPO = Path(__file__).resolve().parents[2]
 WORKSPACE = Path(os.environ.get("SE_WORKSPACE", HOME / "ws/se"))
 PARALLEL = WORKSPACE / "testing" / "parallel-test-work"
-REMOTE_REPO = WORKSPACE / "se1/plugins/remote"
+REMOTE_REPO = Path(os.environ.get("SE_REMOTE_REPO", WORKSPACE / "se1/plugins/remote"))
 DIRECT_TRANSPORT_REPO = WORKSPACE / "se1/direct-transport"
 MAGNETAR = HOME / ".config/Magnetar"
 PULSAR_TEMPLATE = HOME / ".config/Pulsar"
@@ -425,6 +425,11 @@ def prepare_client(c: Client, with_plugin: bool, server_url: str) -> None:
         ("direct-transport", DIRECT_TRANSPORT_REPO, "DirectTransportClient.xml"),
     ]
     ids = ["remote", "direct-transport"]
+    # Extra client dev folders, name|folder|manifest entries separated by ";"
+    for entry in filter(None, os.environ.get("CLIENT_DEV_FOLDERS", "").split(";")):
+        name, folder, file = entry.split("|")
+        plugins.append((name, Path(folder), file))
+        ids.append(name)
     if with_plugin:
         plugins.append(("se-image-gen", REPO, "ImageGenClient.xml"))
         ids.append(CLIENT_PLUGIN_ID)
@@ -1125,7 +1130,16 @@ def check_server_edit(c: Checks, writer: RemoteAPI, grid: int) -> None:
 def check_server_wins(c: Checks, before: int) -> None:
     """The server made every image once, the client none"""
     time.sleep(STUB_SECONDS)
-    server = len(re.findall(r"Generating: ", server_game_log()))
+
+    def server_count() -> int:
+        return len(re.findall(r"Generating: ", server_game_log()))
+
+    # The DS writes its log late: wait for it to catch up with the image server
+    started = time.monotonic()
+    while server_count() < generated() - before and time.monotonic() - started < 30:
+        time.sleep(1)
+    print(f"server log caught up after {time.monotonic() - started:.0f} s", flush=True)
+    server = server_count()
     c.check(
         generated() - before == server and "Generating: " not in WRITER.game_log(),
         "the server generated every image once and the client none",
